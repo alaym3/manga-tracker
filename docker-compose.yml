@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: manga_tracker
+    ports:
+      - "5432:5432"
+    volumes: 
+      - postgres_data:/var/lib/postgresql/data
+  mage:
+    command: mage start ${PROJECT_NAME}
+    env_file:
+      - .env
+    build:
+      context: .
+      dockerfile: mage.Dockerfile
+    environment:
+      USER_CODE_PATH: /home/src/${PROJECT_NAME}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: manga_tracker
+    ports:
+      - "6789:6789"
+    volumes:
+      - .:/home/src/  
+    restart: on-failure:5
+    depends_on:
+      - postgres
+  flyway:
+      image: flyway/flyway:10
+      container_name: flyway
+      command: -url=jdbc:postgresql://postgres:5432/manga_tracker -user=postgres -password=postgres -connectRetries=10 migrate
+      volumes:
+        - ./manga_tracker/utils/migrations:/flyway/sql
+      depends_on:
+        - postgres
+volumes:
+  postgres_data:
