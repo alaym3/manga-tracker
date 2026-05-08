@@ -41,5 +41,22 @@ services:
         - ./manga_tracker/utils/migrations:/flyway/sql
       depends_on:
         - postgres
+  metabase:
+    image: metabase/metabase:v0.55.12
+    container_name: metabase
+    hostname: metabase
+    env_file:
+      - .env
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: 5432
+      MB_DB_NAME: metabase
+      MB_DB_USER: ${POSTGRES_USER}
+      MB_DB_PASS: ${POSTGRES_PASSWORD}
+    depends_on:
+      - postgres
+    ports:
+      - 3000:3000
 volumes:
   postgres_data:
