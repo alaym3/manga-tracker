@@ -1,0 +1,14 @@
+# https://docs.getdbt.com/docs/core/connect-data-platform/profiles.yml
+
+manga_tracker_dbt:
+  outputs:
+    manga_tracker:
+      dbname: "{{ env_var('POSTGRES_DBNAME') }}"
+      host:  "{{ env_var('POSTGRES_HOST') }}"
+      password:  "{{ env_var('POSTGRES_PASSWORD') }}"
+      port: 5432
+      schema: staging
+      threads: 4
+      type: postgres
+      user: "{{ env_var('POSTGRES_USER') }}"
+  target: manga_tracker

@@ -3,25 +3,25 @@
 -- Source: MangaDex API via raw.manga_responses and raw.chapter_responses
 
 CREATE TABLE IF NOT EXISTS staging.manga (
-    id              SERIAL PRIMARY KEY,
-    mangadex_id     TEXT NOT NULL,
-    source          TEXT NOT NULL DEFAULT 'mangadex',
-    title           TEXT NOT NULL,
-    title_japanese  TEXT,
-    alt_titles      JSONB,
-    description     TEXT,
-    original_language TEXT,
-    status          TEXT,
-    year            INT,
-    content_rating  TEXT,
-    tags            TEXT[],
-    author          TEXT,
-    artist          TEXT,
-    cover_url       TEXT,
+    id                  SERIAL PRIMARY KEY,
+    mangadex_id         TEXT NOT NULL,
+    source              TEXT NOT NULL DEFAULT 'mangadex',
+    title               TEXT NOT NULL,
+    title_japanese      TEXT,
+    alt_titles          JSONB,
+    description         TEXT,
+    original_language   TEXT,
+    status              TEXT,
+    year                INT,
+    content_rating      TEXT,
+    tags                TEXT[],
+    authors             TEXT[],
+    artists             TEXT[],
+    cover_url           TEXT,
     created_at_source   TIMESTAMPTZ,
     updated_at_source   TIMESTAMPTZ,
-    ingested_at         TIMESTAMPTZ DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ DEFAULT NOW(),
+    ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(source, mangadex_id)
 );
 
@@ -38,8 +38,8 @@ COMMENT ON COLUMN staging.manga.status              IS 'Publication status from 
 COMMENT ON COLUMN staging.manga.year                IS 'Publication start year from data[].attributes.year.';
 COMMENT ON COLUMN staging.manga.content_rating      IS 'Content rating from data[].attributes.contentRating. One of: safe, suggestive, erotica, pornographic.';
 COMMENT ON COLUMN staging.manga.tags                IS 'Flattened array of tag names in English, extracted from data[].attributes.tags[].attributes.name.en.';
-COMMENT ON COLUMN staging.manga.author              IS 'Author name, extracted from relationships[] where type=author with includes[]=author expansion.';
-COMMENT ON COLUMN staging.manga.artist              IS 'Artist name, extracted from relationships[] where type=artist with includes[]=artist expansion.';
+COMMENT ON COLUMN staging.manga.authors             IS 'Array of author names, extracted from relationships[] where type=author with includes[]=author expansion.';
+COMMENT ON COLUMN staging.manga.artists             IS 'Array of artist names, extracted from relationships[] where type=artist with includes[]=artist expansion.';
 COMMENT ON COLUMN staging.manga.cover_url           IS 'Constructed cover image URL. Pattern: https://uploads.mangadex.org/covers/{mangadex_id}/{fileName} where fileName comes from relationships[] where type=cover_art.';
 COMMENT ON COLUMN staging.manga.created_at_source   IS 'Record creation timestamp on MangaDex, from data[].attributes.createdAt.';
 COMMENT ON COLUMN staging.manga.updated_at_source   IS 'Last update timestamp on MangaDex, from data[].attributes.updatedAt. Useful for detecting upstream changes.';
