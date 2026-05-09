@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS staging.manga (
     content_rating      TEXT,
     tags                TEXT[],
     authors             TEXT[],
-    -- cover_url           TEXT,
+    artists             TEXT[],
+    cover_url           TEXT,
     created_at_source   TIMESTAMPTZ,
     updated_at_source   TIMESTAMPTZ,
     ingested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -38,7 +39,8 @@ COMMENT ON COLUMN staging.manga.year                IS 'Publication start year f
 COMMENT ON COLUMN staging.manga.content_rating      IS 'Content rating from data[].attributes.contentRating. One of: safe, suggestive, erotica, pornographic.';
 COMMENT ON COLUMN staging.manga.tags                IS 'Flattened array of tag names in English, extracted from data[].attributes.tags[].attributes.name.en.';
 COMMENT ON COLUMN staging.manga.authors             IS 'Array of author names, extracted from relationships[] where type=author with includes[]=author expansion.';
--- COMMENT ON COLUMN staging.manga.cover_url           IS 'Constructed cover image URL. Pattern: https://uploads.mangadex.org/covers/{mangadex_id}/{fileName} where fileName comes from relationships[] where type=cover_art.';
+COMMENT ON COLUMN staging.manga.artists             IS 'Array of artist names, extracted from relationships[] where type=artist with includes[]=artist expansion.';
+COMMENT ON COLUMN staging.manga.cover_url           IS 'Constructed cover image URL. Pattern: https://uploads.mangadex.org/covers/{mangadex_id}/{fileName} where fileName comes from relationships[] where type=cover_art.';
 COMMENT ON COLUMN staging.manga.created_at_source   IS 'Record creation timestamp on MangaDex, from data[].attributes.createdAt.';
 COMMENT ON COLUMN staging.manga.updated_at_source   IS 'Last update timestamp on MangaDex, from data[].attributes.updatedAt. Useful for detecting upstream changes.';
 COMMENT ON COLUMN staging.manga.ingested_at         IS 'Timestamp when this record was first written to staging.';

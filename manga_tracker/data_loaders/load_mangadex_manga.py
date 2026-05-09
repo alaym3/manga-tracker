@@ -7,7 +7,7 @@ if "test" not in globals():
     from mage_ai.data_preparation.decorators import test
 
 # setting max_records temporarily to a low number for testing — can be removed or set to None for no limit in production
-max_records = 1000
+max_records = 350
 
 @data_loader
 def load_data_from_api(*args, **kwargs):

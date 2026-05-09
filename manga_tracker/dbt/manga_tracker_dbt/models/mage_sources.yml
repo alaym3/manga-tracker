@@ -1,0 +1,14 @@
+sources:
+- description: Dataframes Mage upstream blocks
+  loader: mage
+  name: mage_manga_tracker_dbt
+  schema: staging
+  tables:
+  - description: Dataframe for block `export_data_to_postgres` of the `load_mangadex_manga`
+      mage pipeline.
+    identifier: mage_load_mangadex_manga_export_data_to_postgres
+    meta:
+      block_uuid: export_data_to_postgres
+      pipeline_uuid: load_mangadex_manga
+    name: load_mangadex_manga_export_data_to_postgres
+version: 2

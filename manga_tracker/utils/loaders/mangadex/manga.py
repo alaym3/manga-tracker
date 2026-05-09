@@ -23,7 +23,7 @@ from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_re
 _MANGADEX_MANGA_URL = "https://api.mangadex.org/manga"
 _PAGE_LIMIT = 100  # records per page — MangaDex max
 _REQUEST_TIMEOUT_SECONDS = 30
-DEFAULT_INCLUDES = ["author", "cover_art", "tags"]
+DEFAULT_INCLUDES = ["author", "artist","cover_art", "tags"]
 DEFAULT_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "manga-tracker/raw-manga-loader/1.0",

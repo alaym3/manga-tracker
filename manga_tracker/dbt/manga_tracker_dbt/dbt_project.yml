@@ -1,0 +1,58 @@
+
+# Name your project! Project names should contain only lowercase characters
+# and underscores. A good package name should reflect your organization's
+# name or the intended use of these models
+name: 'manga_tracker_dbt'
+version: '1.0.0'
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'manga_tracker_dbt'
+
+# These configurations specify where dbt should look for different types of files.
+# The `model-paths` config, for example, states that models in this project can be
+# found in the "models/" directory. You probably won't need to change these!
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:         # directories to be removed by `dbt clean`
+  - "target"
+  - "dbt_packages"
+
+
+# Configuring models
+# Full documentation: https://docs.getdbt.com/docs/configuring-models
+
+# In this example config, we tell dbt to build all models in the example/
+# directory as views. These settings can be overridden in the individual model
+# files using the `{{ config(...) }}` macro.
+models:
+  manga_tracker_dbt:
+    staging:
+      +schema: staging
+      stg_manga:
+        +materialized: incremental
+        post-hook:
+          - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Cleaned and normalized manga records transformed from raw.manga_responses. One row per manga title.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID, sourced from data[].id. Used to join back to raw.manga_responses.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.source IS 'API source for this record. Defaults to mangadex, allows future multi-source ingestion.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.title IS 'Primary English title, extracted from attributes.title.en with ja-ro fallback.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.title_japanese IS 'Japanese title, extracted from attributes.title.ja-ro.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.alt_titles IS 'Full localized title dict from attributes.altTitles, kept as JSONB for all languages.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.description IS 'English description, extracted from attributes.description.en with ja fallback.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.original_language IS 'Original publication language from attributes.originalLanguage. e.g. ja, ko, zh.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.status IS 'Publication status from attributes.status. One of: ongoing, completed, hiatus, cancelled.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.year IS 'Publication start year from attributes.year.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.content_rating IS 'Content rating from attributes.contentRating. One of: safe, suggestive, erotica, pornographic.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.tags IS 'Flattened array of English tag names, extracted from attributes.tags[].attributes.name.en.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.authors IS 'Array of author names from relationships[] where type=author, expanded via includes[]=author.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.artists IS 'Array of artist names from relationships[] where type=artist, expanded via includes[]=artist.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.cover_url IS 'Constructed cover URL. Pattern: https://uploads.mangadex.org/covers/{mangadex_id}/{fileName}.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.created_at_source IS 'Record creation timestamp on MangaDex, from attributes.createdAt.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt. Useful for detecting upstream changes.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
+    core:
+      +schema: core

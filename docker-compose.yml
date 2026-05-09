@@ -13,7 +13,6 @@ services:
     volumes: 
       - postgres_data:/var/lib/postgresql/data
   mage:
-    command: mage start ${PROJECT_NAME}
     env_file:
       - .env
     build:
@@ -26,6 +25,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: manga_tracker
+      DBT_PROJECT_NAME: manga_tracker_dbt
     ports:
       - "6789:6789"
     volumes:

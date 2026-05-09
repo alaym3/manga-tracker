@@ -10,17 +10,18 @@ blocks:
   language: python
   name: load_mangadex_manga
   retry_config: null
-  status: updated
+  status: executed
   timeout: null
   type: data_loader
   upstream_blocks: []
   uuid: load_mangadex_manga
-- all_upstream_blocks_executed: false
+- all_upstream_blocks_executed: true
   color: null
   configuration:
     file_source:
       path: data_exporters/export_data_to_postgres.py
-  downstream_blocks: []
+  downstream_blocks:
+  - dbt/manga_tracker_dbt/models/staging/stg_manga
   executor_config: null
   executor_type: local_python
   has_callback: false
@@ -33,6 +34,27 @@ blocks:
   upstream_blocks:
   - load_mangadex_manga
   uuid: export_data_to_postgres
+- all_upstream_blocks_executed: true
+  color: null
+  configuration:
+    dbt_project_name: dbt/manga_tracker_dbt
+    file_path: dbt/manga_tracker_dbt/models/staging/stg_manga.sql
+    file_source:
+      path: dbt/manga_tracker_dbt/models/staging/stg_manga.sql
+      project_path: dbt/manga_tracker_dbt
+  downstream_blocks: []
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: sql
+  name: dbt/manga_tracker_dbt/models/staging/stg_manga
+  retry_config: null
+  status: executed
+  timeout: null
+  type: dbt
+  upstream_blocks:
+  - export_data_to_postgres
+  uuid: dbt/manga_tracker_dbt/models/staging/stg_manga
 cache_block_output_in_memory: false
 callbacks: []
 concurrency_config: {}
