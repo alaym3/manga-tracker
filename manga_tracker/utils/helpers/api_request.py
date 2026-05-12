@@ -98,6 +98,9 @@ class _RetryableAPIError(Exception):
 #      and state each time. At module level it is defined and decorated once.
 # ---------------------------------------------------------------------------
 
+def _is_html_response(response: requests.Response) -> bool:
+    content_type = response.headers.get("Content-Type", "")
+    return "text/html" in content_type or response.text.lstrip().startswith("<!doctype")
 
 @retry(
     # Only retry on our internal signal — not on every exception type.
@@ -163,6 +166,14 @@ def _execute_with_retry(
         raise _RetryableAPIError(f"HTTP {response.status_code} from {url}")
 
     if not response.ok:
+        # HTML response on any status code means a WAF/CDN block — treat as transient
+        if _is_html_response(response):
+            print(
+                f"[api_request] HTML response on HTTP {response.status_code} "
+                f"from {method} {url} — likely rate limited by CDN, retrying."
+            )
+        raise _RetryableAPIError(f"HTML response with HTTP {response.status_code} from {url}")
+
         # Non-retryable 4xx (e.g. 400, 401, 403, 404) — these are caller errors.
         # Retrying won't fix them, so raise immediately to avoid wasting attempts.
         raise APIRequestError(

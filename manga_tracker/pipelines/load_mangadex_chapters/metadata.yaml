@@ -1,72 +1,74 @@
 blocks:
 - all_upstream_blocks_executed: true
   color: null
-  configuration: {}
+  configuration:
+    file_source:
+      path: data_loaders/load_mangadex_chapters.py
   downstream_blocks:
   - export_data_to_postgres
   executor_config: null
   executor_type: local_python
   has_callback: false
   language: python
-  name: load_mangadex_manga
+  name: load_mangadex_chapters
   retry_config: null
   status: updated
   timeout: null
   type: data_loader
   upstream_blocks: []
-  uuid: load_mangadex_manga
+  uuid: load_mangadex_chapters
 - all_upstream_blocks_executed: false
   color: null
   configuration:
     file_source:
       path: data_exporters/export_data_to_postgres.py
   downstream_blocks:
-  - dbt/manga_tracker_dbt/models/staging/stg_manga
+  - dbt/manga_tracker_dbt/models/staging/stg_chapters
   executor_config: null
   executor_type: local_python
   has_callback: false
   language: python
   name: export_data_to_postgres
   retry_config: null
-  status: executed
+  status: updated
   timeout: null
   type: data_exporter
   upstream_blocks:
-  - load_mangadex_manga
+  - load_mangadex_chapters
   uuid: export_data_to_postgres
 - all_upstream_blocks_executed: false
   color: null
   configuration:
     dbt_project_name: dbt/manga_tracker_dbt
-    file_path: dbt/manga_tracker_dbt/models/staging/stg_manga.sql
+    file_path: dbt/manga_tracker_dbt/models/staging/stg_chapters.sql
     file_source:
-      path: dbt/manga_tracker_dbt/models/staging/stg_manga.sql
+      path: dbt/manga_tracker_dbt/models/staging/stg_chapters.sql
       project_path: dbt/manga_tracker_dbt
   downstream_blocks: []
   executor_config: null
   executor_type: local_python
   has_callback: false
   language: sql
-  name: dbt/manga_tracker_dbt/models/staging/stg_manga
+  name: stg_chapters
   retry_config: null
-  status: updated
+  status: not_executed
   timeout: null
   type: dbt
   upstream_blocks:
   - export_data_to_postgres
-  uuid: dbt/manga_tracker_dbt/models/staging/stg_manga
+  uuid: dbt/manga_tracker_dbt/models/staging/stg_chapters
 cache_block_output_in_memory: false
 callbacks: []
 concurrency_config: {}
 conditionals: []
-created_at: '2026-05-08 17:11:19.119013+00:00'
+created_at: '2026-05-09 15:41:42.190688+00:00'
 data_integration: null
 description: null
 executor_config: {}
 executor_count: 1
 executor_type: null
 extensions: {}
-name: load_mangadex_manga
+name: load_mangadex_chapters
 notification_config: {}
 remote_variables_dir: null
 retry_config: {}
@@ -76,13 +78,13 @@ settings:
 spark_config: {}
 tags: []
 type: python
-uuid: load_mangadex_manga
+uuid: load_mangadex_chapters
 variables:
   backfill_date: '2021-04-01'
   execution_type: incremental
   exporter_config_profile: manga_tracker_postgres
   exporter_schema_name: raw
-  exporter_table_name: manga_responses
+  exporter_table_name: chapter_responses
   exporter_unique_constraints:
   - mangadex_id
   manual_run_from_date: '2020-01-01'

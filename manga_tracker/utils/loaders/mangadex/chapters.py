@@ -1,7 +1,7 @@
 """
-manga_tracker/utils/loaders/mangadex/manga.py
+manga_tracker/utils/loaders/mangadex/chapters.py
 
-Loads all manga from the MangaDex API using date-chunked pagination.
+Loads all English chapters from the MangaDex API using date-chunked pagination.
 Chunks by createdAt to stay under MangaDex's 10k Elasticsearch offset limit.
 Client-side filtering is used to cap each chunk since the API does not support
 a createdAtBefore parameter.
@@ -25,16 +25,16 @@ from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_re
 # Constants
 # ---------------------------------------------------------------------------
 
-_MANGADEX_MANGA_URL = "https://api.mangadex.org/manga"
+_MANGADEX_CHAPTER_URL = "https://api.mangadex.org/chapter"
 _PAGE_LIMIT = 100
 _REQUEST_TIMEOUT_SECONDS = 30
-_CHUNK_MONTHS = 2                                           # safe under 10k Elasticsearch limit
+_CHUNK_MONTHS = 1                                           # smaller than manga — 799k records vs 92k
 _MANGADEX_EPOCH = datetime(2018, 1, 1, tzinfo=timezone.utc)
 _SLEEP_BETWEEN_PAGES = 1.5                                  # seconds — prevents CDN throttling
-DEFAULT_INCLUDES = ["author", "artist", "cover_art", "tags"]
+DEFAULT_INCLUDES = ["scanlation_group"]
 DEFAULT_HEADERS = {
     "Accept": "application/json",
-    "User-Agent": "manga-tracker/raw-manga-loader/1.0",
+    "User-Agent": "manga-tracker/raw-chapter-loader/1.0",
 }
 
 
@@ -75,22 +75,31 @@ def _build_params(
         ("offset", offset),
         ("order[createdAt]", "asc"),
         ("createdAtSince", since.strftime("%Y-%m-%dT%H:%M:%S")),
+        ("translatedLanguage[]", "en"),
     ]
     for include in includes:
         parts.append(("includes[]", include))
     return urlencode(parts, quote_via=quote)
 
 
+def _extract_manga_id(payload: dict) -> Optional[str]:
+    """Extract manga UUID from relationships[] without needing includes[]=manga."""
+    for rel in payload.get("relationships", []):
+        if rel.get("type") == "manga":
+            return rel.get("id")
+    return None
+
+
 def _parse_page(response_json: dict, offset: int) -> list:
     """
-    Validate and extract manga records from a single paginated response.
+    Validate and extract chapter records from a single paginated response.
 
     Args:
         response_json (dict): Parsed JSON body from the MangaDex API.
         offset (int): Current pagination offset — used for error context.
 
     Returns:
-        List[dict]: Manga records from this page.
+        List[dict]: Chapter records from this page.
 
     Raises:
         ValueError: If the response is missing the expected 'data' key.
@@ -104,7 +113,7 @@ def _parse_page(response_json: dict, offset: int) -> list:
 
 
 def _parse_created_at(record: dict) -> Optional[datetime]:
-    """Extract and parse createdAt from a manga record's attributes."""
+    """Extract and parse createdAt from a chapter record's attributes."""
     raw = record.get("attributes", {}).get("createdAt")
     if not raw:
         return None
@@ -115,7 +124,7 @@ def _parse_created_at(record: dict) -> Optional[datetime]:
 # Loader
 # ---------------------------------------------------------------------------
 
-def stream_raw_manga(
+def stream_raw_chapters(
     pipeline_uuid: str,
     since: Optional[datetime] = None,
     limit: int = _PAGE_LIMIT,
@@ -123,7 +132,7 @@ def stream_raw_manga(
     max_records: Optional[int] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     """
-    Yield raw manga payloads from MangaDex using date-chunked pagination.
+    Yield raw chapter payloads from MangaDex using date-chunked pagination.
 
     Chunks time into _CHUNK_MONTHS windows starting from `since` to stay
     under MangaDex's 10k Elasticsearch offset limit. Within each chunk,
@@ -139,13 +148,13 @@ def stream_raw_manga(
             Useful for development runs.
 
     Yields:
-        dict: Raw manga payload from data[] in the MangaDex API response.
+        dict: Raw chapter payload from data[] in the MangaDex API response.
 
     Raises:
         APIRequestError: If any paginated request fails after all retry attempts.
         ValueError: If any page response has an unexpected structure.
     """
-    print(f"[{pipeline_uuid}] Starting MangaDex manga load.")
+    print(f"[{pipeline_uuid}] Starting MangaDex chapter load.")
 
     since = since or _MANGADEX_EPOCH
     before = datetime.now(timezone.utc)
@@ -155,7 +164,7 @@ def stream_raw_manga(
 
     print(
         f"[{pipeline_uuid}] Date range: {since.date()} to {before.date()} "
-        f"— {len(chunks)} chunks of {_CHUNK_MONTHS} months each."
+        f"— {len(chunks)} chunks of {_CHUNK_MONTHS} month(s) each."
     )
 
     for chunk_index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
@@ -180,7 +189,7 @@ def stream_raw_manga(
             try:
                 response = make_api_request(
                     method="GET",
-                    url=f"{_MANGADEX_MANGA_URL}?{params}",
+                    url=f"{_MANGADEX_CHAPTER_URL}?{params}",
                     timeout=_REQUEST_TIMEOUT_SECONDS,
                     headers=DEFAULT_HEADERS,
                 )
@@ -189,7 +198,7 @@ def stream_raw_manga(
                     f"[{pipeline_uuid}] API request failed on chunk "
                     f"{chunk_index}/{len(chunks)} page {page_number} "
                     f"(offset={offset}). "
-                    f"Successfully fetched {total_records} manga before failure. "
+                    f"Successfully fetched {total_records} chapters before failure. "
                     f"Error: {e}"
                 )
                 raise
@@ -202,7 +211,7 @@ def stream_raw_manga(
                     f"[{pipeline_uuid}] Failed to parse response on chunk "
                     f"{chunk_index}/{len(chunks)} page {page_number} "
                     f"(offset={offset}). "
-                    f"Successfully fetched {total_records} manga before failure. "
+                    f"Successfully fetched {total_records} chapters before failure. "
                     f"Error: {e}"
                 )
                 raise
@@ -238,7 +247,7 @@ def stream_raw_manga(
 
             print(
                 f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)} "
-                f"page {page_number}: fetched {len(records)} manga "
+                f"page {page_number}: fetched {len(records)} chapters "
                 f"(chunk total: {chunk_records}, overall: {total_records})."
             )
 
@@ -255,10 +264,10 @@ def stream_raw_manga(
             offset += len(records)
             time.sleep(_SLEEP_BETWEEN_PAGES)
 
-    print(f"[{pipeline_uuid}] Done. Total manga retrieved: {total_records}.")
+    print(f"[{pipeline_uuid}] Done. Total chapters retrieved: {total_records}.")
 
 
-def load_manga(
+def load_chapters(
     pipeline_uuid: str,
     since: Optional[datetime] = None,
     limit: int = _PAGE_LIMIT,
@@ -266,9 +275,9 @@ def load_manga(
     max_records: Optional[int] = None,
 ) -> pd.DataFrame:
     """
-    Load all manga from the MangaDex API and return as a DataFrame.
+    Load chapters from MangaDex and return as a DataFrame.
 
-    Thin orchestration wrapper around stream_raw_manga() that handles
+    Thin orchestration wrapper around stream_raw_chapters() that handles
     row construction, pulled_at timestamping, and DataFrame assembly.
     This is the function Mage blocks should call directly.
 
@@ -278,11 +287,10 @@ def load_manga(
         limit (int): Page size to request from MangaDex. Max 100.
         includes (List[str], optional): Relationship expansions to include.
         max_records (int, optional): Stop early after yielding this many records.
-            Useful for development runs.
 
     Returns:
-        pd.DataFrame: All manga as a DataFrame with columns:
-            mangadex_id, pulled_at, payload.
+        pd.DataFrame: All chapters as a DataFrame with columns:
+            mangadex_id, manga_id, pulled_at, payload.
 
     Raises:
         APIRequestError: If any paginated request fails after all retry attempts.
@@ -293,10 +301,11 @@ def load_manga(
     rows = [
         {
             "mangadex_id": record.get("id"),
+            "manga_id": _extract_manga_id(record),
             "pulled_at": pulled_at,
             "payload": record,
         }
-        for record in stream_raw_manga(
+        for record in stream_raw_chapters(
             pipeline_uuid=pipeline_uuid,
             since=since,
             limit=limit,

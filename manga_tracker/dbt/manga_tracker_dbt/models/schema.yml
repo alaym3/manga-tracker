@@ -1,4 +1,3 @@
-
 version: 2
 
 sources:
@@ -6,3 +5,100 @@ sources:
     schema: raw
     tables:
       - name: manga_responses
+        columns:
+          - name: mangadex_id
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
+          - name: pulled_at
+            tests:
+              - not_null
+      - name: chapter_responses
+        columns:
+          - name: mangadex_id
+            tests:
+              - not_null
+              - unique
+          - name: manga_id
+            tests:
+              - not_null:
+                  config:
+                    severity: warn    # should always be present but defensive
+          - name: payload
+            tests:
+              - not_null
+          - name: pulled_at
+            tests:
+              - not_null
+
+models:
+  - name: stg_manga
+    description: "Cleaned and normalized manga records transformed from raw.manga_responses. One row per manga title."
+    columns:
+      - name: mangadex_id
+        tests:
+          - not_null
+          - unique
+      - name: source
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['mangadex']
+      - name: title
+        tests:
+          - not_null:
+              config:
+                severity: warn          
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['ongoing', 'completed', 'hiatus', 'cancelled']
+              config:
+                severity: warn        # warn not error — upstream data may have nulls
+      - name: content_rating
+        tests:
+          - accepted_values:
+              values: ['safe', 'suggestive', 'erotica', 'pornographic']
+              config:
+                severity: warn
+      - name: original_language
+        tests:
+          - not_null:
+              config:
+                severity: warn
+
+      - name: cover_url
+        tests:
+          - not_null:
+              config:
+                severity: warn
+
+  - name: stg_chapters
+    description: "Cleaned and normalized chapter records transformed from raw.chapter_responses."
+    columns:
+      - name: mangadex_id
+        tests:
+          - not_null
+          - unique
+      - name: manga_mangadex_id
+        tests:
+          - not_null:
+              config:
+                severity: warn        # chapters may exist for manga not yet loaded
+      - name: language
+        tests:
+          - not_null
+      - name: published_at
+        tests:
+          - not_null:
+              config:
+                severity: warn        # draft chapters may have null publishAt
+      - name: is_unavailable
+        tests:
+          - not_null
+      - name: ingested_at
+        tests:
+          - not_null
