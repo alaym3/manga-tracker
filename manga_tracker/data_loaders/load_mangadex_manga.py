@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from manga_tracker.utils.loaders.mangadex.manga import load_manga
 import pandas as pd
 
@@ -6,14 +7,22 @@ if "data_loader" not in globals():
 if "test" not in globals():
     from mage_ai.data_preparation.decorators import test
 
-# setting max_records temporarily to a low number for testing — can be removed or set to None for no limit in production
-max_records = 350
+
+def _parse_since_date(value: str) -> datetime:
+    """Parse ISO date string from pipeline variable into UTC datetime."""
+    return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+
+# deleted variables manga_since_date and max_records can be used
 
 @data_loader
 def load_data_from_api(*args, **kwargs):
+    since_raw = kwargs.get("manga_since_date")
+    since = _parse_since_date(since_raw) if since_raw else None
+
     return load_manga(
         pipeline_uuid=kwargs.get("pipeline_uuid"),
-        max_records=max_records,
+        since=since,
+        # max_records=kwargs.get("max_records"),
     )
 
 

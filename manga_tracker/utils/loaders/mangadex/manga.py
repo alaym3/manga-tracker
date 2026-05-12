@@ -1,7 +1,10 @@
 """
 manga_tracker/utils/loaders/mangadex/manga.py
 
-Loads all manga from the MangaDex API using paginated requests.
+Loads all manga from the MangaDex API using date-chunked pagination.
+Chunks by createdAt to stay under MangaDex's 10k Elasticsearch offset limit.
+Client-side filtering is used to cap each chunk since the API does not support
+a createdAtBefore parameter.
 
 No authentication required — MangaDex public API is unauthenticated.
 
@@ -9,8 +12,10 @@ Retry logic per page request is handled by the shared utility:
     manga_tracker/utils/helpers/api_request.py
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Generator, Iterable, List, Optional
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
+from urllib.parse import urlencode, quote
 
 import pandas as pd
 
@@ -21,9 +26,12 @@ from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_re
 # ---------------------------------------------------------------------------
 
 _MANGADEX_MANGA_URL = "https://api.mangadex.org/manga"
-_PAGE_LIMIT = 100  # records per page — MangaDex max
+_PAGE_LIMIT = 100
 _REQUEST_TIMEOUT_SECONDS = 30
-DEFAULT_INCLUDES = ["author", "artist","cover_art", "tags"]
+_CHUNK_MONTHS = 2                                           # safe under 10k Elasticsearch limit
+_MANGADEX_EPOCH = datetime(2018, 1, 1, tzinfo=timezone.utc)
+_SLEEP_BETWEEN_PAGES = 1.5                                  # seconds — prevents CDN throttling
+DEFAULT_INCLUDES = ["author", "artist", "cover_art", "tags"]
 DEFAULT_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "manga-tracker/raw-manga-loader/1.0",
@@ -34,15 +42,43 @@ DEFAULT_HEADERS = {
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _generate_date_chunks(
+    start: datetime,
+    end: datetime,
+    chunk_months: int,
+) -> Iterator[Tuple[datetime, datetime]]:
+    """
+    Yield (chunk_start, chunk_end) tuples covering start to end in
+    increments of chunk_months months.
+
+    chunk_end is used for client-side filtering only — it is not sent
+    to the API since createdAtBefore is not a supported parameter.
+    """
+    chunk_start = start
+    while chunk_start < end:
+        chunk_end = chunk_start + timedelta(days=chunk_months * 30)
+        if chunk_end > end:
+            chunk_end = end
+        yield chunk_start, chunk_end
+        chunk_start = chunk_end
+
+
 def _build_params(
     offset: int,
     limit: int,
-    includes: Iterable[str],
-) -> Dict[str, Any]:
-    params: Dict[str, Any] = {"limit": limit, "offset": offset}
+    includes: List[str],
+    since: datetime,
+) -> str:
+    """Build query string with unencoded brackets for MangaDex API compatibility."""
+    parts = [
+        ("limit", limit),
+        ("offset", offset),
+        ("order[createdAt]", "asc"),
+        ("createdAtSince", since.strftime("%Y-%m-%dT%H:%M:%S")),
+    ]
     for include in includes:
-        params.setdefault("includes[]", []).append(include)
-    return params
+        parts.append(("includes[]", include))
+    return urlencode(parts, quote_via=quote)
 
 
 def _parse_page(response_json: dict, offset: int) -> list:
@@ -67,31 +103,38 @@ def _parse_page(response_json: dict, offset: int) -> list:
     return response_json["data"]
 
 
+def _parse_created_at(record: dict) -> Optional[datetime]:
+    """Extract and parse createdAt from a manga record's attributes."""
+    raw = record.get("attributes", {}).get("createdAt")
+    if not raw:
+        return None
+    return datetime.fromisoformat(raw)
+
+
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
 
 def stream_raw_manga(
     pipeline_uuid: str,
+    since: Optional[datetime] = None,
     limit: int = _PAGE_LIMIT,
-    includes: Optional[Iterable[str]] = None,
+    includes: Optional[List[str]] = None,
     max_records: Optional[int] = None,
 ) -> Generator[Dict[str, Any], None, None]:
     """
-    Yield raw manga payloads from MangaDex with pagination.
+    Yield raw manga payloads from MangaDex using date-chunked pagination.
 
-    Fetches manga in paginated batches of {_PAGE_LIMIT} records per request.
-    Continues until all pages are exhausted. If any page request fails after all
-    retry attempts, raises immediately with a log of how many manga were
-    successfully fetched before the failure — partial data is never returned.
-
-    Retry logic (3 attempts, exponential backoff with jitter) is handled
-    transparently by make_api_request() for each individual page request.
+    Chunks time into _CHUNK_MONTHS windows starting from `since` to stay
+    under MangaDex's 10k Elasticsearch offset limit. Within each chunk,
+    paginates until records exceed chunk_end (client-side filter) or pages
+    are exhausted, then advances to the next chunk.
 
     Args:
         pipeline_uuid (str): UUID of the Mage pipeline — used for log prefixing.
+        since (datetime, optional): Start of date range. Defaults to _MANGADEX_EPOCH.
         limit (int): Page size to request from MangaDex. Max 100.
-        includes (Iterable[str], optional): Relationship expansions to include.
+        includes (List[str], optional): Relationship expansions to include.
         max_records (int, optional): Stop early after yielding this many records.
             Useful for development runs.
 
@@ -104,89 +147,124 @@ def stream_raw_manga(
     """
     print(f"[{pipeline_uuid}] Starting MangaDex manga load.")
 
+    since = since or _MANGADEX_EPOCH
+    before = datetime.now(timezone.utc)
     includes = list(includes or DEFAULT_INCLUDES)
-    offset = 0
     total_records = 0
-    total: Optional[int] = None  # populated from first response
+    chunks = list(_generate_date_chunks(since, before, _CHUNK_MONTHS))
 
-    while True:
-        params = _build_params(offset=offset, limit=limit, includes=includes)
-        page_number = (offset // limit) + 1
+    print(
+        f"[{pipeline_uuid}] Date range: {since.date()} to {before.date()} "
+        f"— {len(chunks)} chunks of {_CHUNK_MONTHS} months each."
+    )
 
-        try:
-            response = make_api_request(
-                method="GET",
-                url=_MANGADEX_MANGA_URL,
-                params=params,
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-                headers=DEFAULT_HEADERS,
-            )
-        except APIRequestError as e:
-            print(
-                f"[{pipeline_uuid}] API request failed on page {page_number} "
-                f"(offset={offset}). "
-                f"Successfully fetched {total_records}"
-                + (f"/{total}" if total is not None else "")
-                + f" manga before failure. Error: {e}"
-            )
-            raise
-
-        try:
-            response_json = response.json()
-            records = _parse_page(response_json, offset=offset)
-        except ValueError as e:
-            print(
-                f"[{pipeline_uuid}] Failed to parse response on page {page_number} "
-                f"(offset={offset}). "
-                f"Successfully fetched {total_records}"
-                + (f"/{total}" if total is not None else "")
-                + f" manga before failure. Error: {e}"
-            )
-            raise
-
-        # Capture total from first response for progress logging
-        if total is None and "total" in response_json:
-            total = response_json["total"]
-
-        # Empty batch means we've passed the last page
-        if not records:
-            print(f"[{pipeline_uuid}] No more records returned by MangaDex.")
-            break
-
-        for record in records:
-            yield record
-            total_records += 1
-
-            if max_records is not None and total_records >= max_records:
-                print(
-                    f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early."
-                )
-                return
-
+    for chunk_index, (chunk_start, chunk_end) in enumerate(chunks, start=1):
         print(
-            f"[{pipeline_uuid}] Page {page_number}: fetched {len(records)} manga "
-            f"(total so far: {total_records}"
-            + (f"/{total}" if total is not None else "")
-            + ")."
+            f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: "
+            f"{chunk_start.date()} to {chunk_end.date()}."
         )
 
-        # Stop if this was the last page
-        if len(records) < limit:
-            break
-        if total is not None and total_records >= total:
-            break
+        offset = 0
+        chunk_records = 0
+        total: Optional[int] = None
 
-        offset += len(records)
+        while True:
+            params = _build_params(
+                offset=offset,
+                limit=limit,
+                includes=includes,
+                since=chunk_start,
+            )
+            page_number = (offset // limit) + 1
+
+            try:
+                response = make_api_request(
+                    method="GET",
+                    url=f"{_MANGADEX_MANGA_URL}?{params}",
+                    timeout=_REQUEST_TIMEOUT_SECONDS,
+                    headers=DEFAULT_HEADERS,
+                )
+            except APIRequestError as e:
+                print(
+                    f"[{pipeline_uuid}] API request failed on chunk "
+                    f"{chunk_index}/{len(chunks)} page {page_number} "
+                    f"(offset={offset}). "
+                    f"Successfully fetched {total_records} manga before failure. "
+                    f"Error: {e}"
+                )
+                raise
+
+            try:
+                response_json = response.json()
+                records = _parse_page(response_json, offset=offset)
+            except ValueError as e:
+                print(
+                    f"[{pipeline_uuid}] Failed to parse response on chunk "
+                    f"{chunk_index}/{len(chunks)} page {page_number} "
+                    f"(offset={offset}). "
+                    f"Successfully fetched {total_records} manga before failure. "
+                    f"Error: {e}"
+                )
+                raise
+
+            if total is None and "total" in response_json:
+                total = response_json["total"]
+
+            if not records:
+                print(
+                    f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: "
+                    f"no more records."
+                )
+                break
+
+            # client-side filter — stop yielding once records exceed chunk_end
+            chunk_exhausted = False
+            for record in records:
+                created_at = _parse_created_at(record)
+                if created_at and created_at >= chunk_end:
+                    chunk_exhausted = True
+                    break
+
+                yield record
+                total_records += 1
+                chunk_records += 1
+
+                if max_records is not None and total_records >= max_records:
+                    print(
+                        f"[{pipeline_uuid}] Reached max_records={max_records}; "
+                        f"stopping early."
+                    )
+                    return
+
+            print(
+                f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)} "
+                f"page {page_number}: fetched {len(records)} manga "
+                f"(chunk total: {chunk_records}, overall: {total_records})."
+            )
+
+            if chunk_exhausted:
+                print(
+                    f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: "
+                    f"reached chunk boundary at {chunk_end.date()}, advancing."
+                )
+                break
+
+            if len(records) < limit:
+                break
+
+            offset += len(records)
+            time.sleep(_SLEEP_BETWEEN_PAGES)
 
     print(f"[{pipeline_uuid}] Done. Total manga retrieved: {total_records}.")
 
 
 def load_manga(
     pipeline_uuid: str,
+    since: Optional[datetime] = None,
     limit: int = _PAGE_LIMIT,
-    includes=None,
-    max_records=None,
-):
+    includes: Optional[List[str]] = None,
+    max_records: Optional[int] = None,
+) -> pd.DataFrame:
     """
     Load all manga from the MangaDex API and return as a DataFrame.
 
@@ -196,8 +274,9 @@ def load_manga(
 
     Args:
         pipeline_uuid (str): UUID of the Mage pipeline — used for log prefixing.
+        since (datetime, optional): Start of date range. Defaults to _MANGADEX_EPOCH.
         limit (int): Page size to request from MangaDex. Max 100.
-        includes (Iterable[str], optional): Relationship expansions to include.
+        includes (List[str], optional): Relationship expansions to include.
         max_records (int, optional): Stop early after yielding this many records.
             Useful for development runs.
 
@@ -219,6 +298,7 @@ def load_manga(
         }
         for record in stream_raw_manga(
             pipeline_uuid=pipeline_uuid,
+            since=since,
             limit=limit,
             includes=includes,
             max_records=max_records,

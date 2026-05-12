@@ -54,5 +54,24 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.created_at_source IS 'Record creation timestamp on MangaDex, from attributes.createdAt.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt. Useful for detecting upstream changes.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
+      stg_chapters:
+        +materialized: incremental
+        post-hook:
+          - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Cleaned and normalized chapter records transformed from raw.chapter_responses. One row per unique chapter release.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID for the chapter, sourced from data[].id.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.manga_mangadex_id IS 'MangaDex UUID of the parent manga, extracted from relationships[] where type=manga.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.volume IS 'Volume number as string from attributes.volume. Kept as TEXT since values like Omnibus 1 are valid.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.chapter_number IS 'Chapter number as string from attributes.chapter. Kept as TEXT since values like 97.5 and extra are valid. Null for oneshots.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.title IS 'Chapter title from attributes.title. Frequently null.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.language IS 'Translated language from attributes.translatedLanguage. ISO 639-1 code e.g. en, fr, es.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.is_unavailable IS 'Whether the chapter is currently unavailable on MangaDex, from attributes.isUnavailable.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.pages IS 'Page count from attributes.pages.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.scanlation_group IS 'Scanlation group name from relationships[] where type=scanlation_group. Null for official releases.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.published_at IS 'Scheduled publish timestamp from attributes.publishAt. Used for new chapter notifications.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.readable_at IS 'Timestamp when chapter becomes readable from attributes.readableAt. May differ from published_at for delayed releases.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.created_at_source IS 'Record creation timestamp on MangaDex, from attributes.createdAt.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.external_url IS 'External hosting URL from attributes.externalUrl. Non-null for officially hosted chapters e.g. Viz, Manga Plus.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
     core:
       +schema: core

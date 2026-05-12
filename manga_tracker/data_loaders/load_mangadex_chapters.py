@@ -12,6 +12,7 @@ def _parse_since_date(value: str) -> datetime:
     """Parse ISO date string from pipeline variable into UTC datetime."""
     return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
 
+# optional vars chapters_since_date and max_records. if null, runs all time.
 
 @data_loader
 def load_data_from_api(*args, **kwargs):
@@ -21,7 +22,7 @@ def load_data_from_api(*args, **kwargs):
     return load_chapters(
         pipeline_uuid=kwargs.get("pipeline_uuid"),
         since=since,
-        max_records=kwargs.get("max_records"),
+        # max_records=kwargs.get("max_records"),
     )
 
 
