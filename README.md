@@ -15,6 +15,12 @@ This repository defines the following services in docker-compose.yml:
 - **Metabase**: http://localhost:3000
 - **Postgres**: connect with TablePlus, DBeaver, psql, or another database client using localhost:5432
 
+## Accessing Postgres database
+
+You can connect to the Postgres database using any SQL client that supports PostgreSQL, for example:
+
+- **TablePlus**: connect using host `localhost`, port `5432`, database `manga_tracker`, username `postgres`, password `postgres`.
+
 ## Start all services
 
 ```bash
@@ -57,7 +63,7 @@ Example migrations:
 
 - `manga_tracker/utils/migrations/V1__create_schemas.sql`
 - `manga_tracker/utils/migrations/V2__init_raw_api_response_tables.sql`
-- `manga_tracker/utils/migrations/V3__init_staging_manga_tables.sql`
+- `manga_tracker/utils/migrations/V3__init_mage_pipeline_checkpoints.sql`
 
 Each migration file contains the SQL to apply the migration. Flyway handles versioning automatically based on the file names.
 
