@@ -80,6 +80,23 @@ def _build_params(
         parts.append(("includes[]", include))
     return urlencode(parts, quote_via=quote)
 
+# unsure about if we need this here - it was required for chapters.
+# def _build_params(
+#     offset: int,
+#     limit: int,
+#     includes: List[str],
+#     since: datetime,
+# ) -> str:
+#     """Build query string with unencoded brackets for MangaDex API compatibility."""
+#     parts = [
+#         ("limit", limit),
+#         ("offset", offset),
+#         ("order[createdAt]", "asc"),
+#         ("createdAtSince", since.strftime("%Y-%m-%dT%H:%M:%S")),
+#     ]
+#     for include in includes:
+#         parts.append(("includes[]", include))
+#     return urlencode(parts, quote_via=lambda s, safe, encoding, errors: quote(s, safe="[]/:"))
 
 def _parse_page(response_json: dict, offset: int) -> list:
     """
@@ -115,31 +132,32 @@ def _parse_created_at(record: dict) -> Optional[datetime]:
 # Loader
 # ---------------------------------------------------------------------------
 
-def stream_raw_manga(
+def stream_raw_manga_by_chunk(
     pipeline_uuid: str,
     since: Optional[datetime] = None,
     limit: int = _PAGE_LIMIT,
     includes: Optional[List[str]] = None,
     max_records: Optional[int] = None,
-) -> Generator[Dict[str, Any], None, None]:
+) -> Generator[Tuple[datetime, List[Dict[str, Any]]], None, None]:
     """
-    Yield raw manga payloads from MangaDex using date-chunked pagination.
+    Yield (chunk_end, records) for each date chunk from MangaDex.
 
-    Chunks time into _CHUNK_MONTHS windows starting from `since` to stay
-    under MangaDex's 10k Elasticsearch offset limit. Within each chunk,
-    paginates until records exceed chunk_end (client-side filter) or pages
-    are exhausted, then advances to the next chunk.
+    Unlike stream_raw_manga() which yields individual records, this yields one
+    batch per date window so callers can checkpoint at chunk boundaries. Empty
+    chunks still yield (chunk_end, []) so callers can advance their resume cursor
+    past sparse date ranges without re-scanning them on restarts.
 
     Args:
         pipeline_uuid (str): UUID of the Mage pipeline — used for log prefixing.
         since (datetime, optional): Start of date range. Defaults to _MANGADEX_EPOCH.
         limit (int): Page size to request from MangaDex. Max 100.
         includes (List[str], optional): Relationship expansions to include.
-        max_records (int, optional): Stop early after yielding this many records.
-            Useful for development runs.
+        max_records (int, optional): Stop early after this many total records.
 
     Yields:
-        dict: Raw manga payload from data[] in the MangaDex API response.
+        Tuple[datetime, List[dict]]: (chunk_end, records) where chunk_end is the
+            exclusive upper bound used for checkpointing and records is the list
+            of raw manga payloads (may be empty for sparse date ranges).
 
     Raises:
         APIRequestError: If any paginated request fails after all retry attempts.
@@ -165,7 +183,7 @@ def stream_raw_manga(
         )
 
         offset = 0
-        chunk_records = 0
+        chunk_records: List[Dict[str, Any]] = []
         total: Optional[int] = None
 
         while True:
@@ -217,29 +235,21 @@ def stream_raw_manga(
                 )
                 break
 
-            # client-side filter — stop yielding once records exceed chunk_end
             chunk_exhausted = False
             for record in records:
                 created_at = _parse_created_at(record)
                 if created_at and created_at >= chunk_end:
                     chunk_exhausted = True
                     break
-
-                yield record
-                total_records += 1
-                chunk_records += 1
-
-                if max_records is not None and total_records >= max_records:
-                    print(
-                        f"[{pipeline_uuid}] Reached max_records={max_records}; "
-                        f"stopping early."
-                    )
-                    return
+                chunk_records.append(record)
+                if max_records is not None and (total_records + len(chunk_records)) >= max_records:
+                    chunk_exhausted = True
+                    break
 
             print(
                 f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)} "
                 f"page {page_number}: fetched {len(records)} manga "
-                f"(chunk total: {chunk_records}, overall: {total_records})."
+                f"(chunk total: {len(chunk_records)}, overall: {total_records + len(chunk_records)})."
             )
 
             if chunk_exhausted:
@@ -255,7 +265,59 @@ def stream_raw_manga(
             offset += len(records)
             time.sleep(_SLEEP_BETWEEN_PAGES)
 
+        if not chunk_records:
+            print(f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: no records in range.")
+            yield chunk_end, []
+            continue
+
+        total_records += len(chunk_records)
+        yield chunk_end, chunk_records
+
+        if max_records is not None and total_records >= max_records:
+            print(
+                f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early."
+            )
+            return
+
     print(f"[{pipeline_uuid}] Done. Total manga retrieved: {total_records}.")
+
+
+def stream_raw_manga(
+    pipeline_uuid: str,
+    since: Optional[datetime] = None,
+    limit: int = _PAGE_LIMIT,
+    includes: Optional[List[str]] = None,
+    max_records: Optional[int] = None,
+) -> Generator[Dict[str, Any], None, None]:
+    """
+    Yield raw manga payloads from MangaDex using date-chunked pagination.
+
+    Thin wrapper around stream_raw_manga_by_chunk() that flattens chunk
+    batches into individual records. Use stream_raw_manga_by_chunk() directly
+    when you need chunk boundaries for checkpointing.
+
+    Args:
+        pipeline_uuid (str): UUID of the Mage pipeline — used for log prefixing.
+        since (datetime, optional): Start of date range. Defaults to _MANGADEX_EPOCH.
+        limit (int): Page size to request from MangaDex. Max 100.
+        includes (List[str], optional): Relationship expansions to include.
+        max_records (int, optional): Stop early after yielding this many records.
+
+    Yields:
+        dict: Raw manga payload from data[] in the MangaDex API response.
+
+    Raises:
+        APIRequestError: If any paginated request fails after all retry attempts.
+        ValueError: If any page response has an unexpected structure.
+    """
+    for _, chunk_records in stream_raw_manga_by_chunk(
+        pipeline_uuid=pipeline_uuid,
+        since=since,
+        limit=limit,
+        includes=includes,
+        max_records=max_records,
+    ):
+        yield from chunk_records
 
 
 def load_manga(

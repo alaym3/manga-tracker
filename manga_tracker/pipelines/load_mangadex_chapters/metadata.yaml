@@ -1,41 +1,20 @@
 blocks:
 - all_upstream_blocks_executed: true
   color: null
-  configuration:
-    file_source:
-      path: data_loaders/load_mangadex_chapters.py
-  downstream_blocks:
-  - export_data_to_postgres
-  executor_config: null
-  executor_type: local_python
-  has_callback: false
-  language: python
-  name: load_mangadex_chapters
-  retry_config: null
-  status: updated
-  timeout: null
-  type: data_loader
-  upstream_blocks: []
-  uuid: load_mangadex_chapters
-- all_upstream_blocks_executed: false
-  color: null
-  configuration:
-    file_source:
-      path: data_exporters/export_data_to_postgres.py
+  configuration: {}
   downstream_blocks:
   - dbt/manga_tracker_dbt/models/staging/stg_chapters
   executor_config: null
   executor_type: local_python
   has_callback: false
   language: python
-  name: export_data_to_postgres
+  name: load_and_export_chapters
   retry_config: null
   status: updated
   timeout: null
-  type: data_exporter
-  upstream_blocks:
-  - load_mangadex_chapters
-  uuid: export_data_to_postgres
+  type: data_loader
+  upstream_blocks: []
+  uuid: load_and_export_chapters
 - all_upstream_blocks_executed: false
   color: null
   configuration:
@@ -55,7 +34,7 @@ blocks:
   timeout: null
   type: dbt
   upstream_blocks:
-  - export_data_to_postgres
+  - load_and_export_chapters
   uuid: dbt/manga_tracker_dbt/models/staging/stg_chapters
 cache_block_output_in_memory: false
 callbacks: []
