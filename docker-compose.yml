@@ -36,7 +36,7 @@ services:
   flyway:
       image: flyway/flyway:10
       container_name: flyway
-      command: -url=jdbc:postgresql://postgres:5432/manga_tracker -user=postgres -password=postgres -connectRetries=10 migrate
+      command: -url=jdbc:postgresql://postgres:5432/manga_tracker -user=postgres -password=postgres -locations=filesystem:/flyway/sql -connectRetries=10 migrate
       volumes:
         - ./manga_tracker/utils/migrations:/flyway/sql
       depends_on:

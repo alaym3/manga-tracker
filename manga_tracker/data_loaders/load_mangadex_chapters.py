@@ -22,7 +22,7 @@ def load_data_from_api(*args, **kwargs):
     return load_chapters(
         pipeline_uuid=kwargs.get("pipeline_uuid"),
         since=since,
-        # max_records=kwargs.get("max_records"),
+        max_records=kwargs.get("max_records"),
     )
 
 

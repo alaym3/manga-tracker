@@ -4,18 +4,18 @@ sources:
   name: mage_manga_tracker_dbt
   schema: staging
   tables:
-  - description: Dataframe for block `export_data_to_postgres` of the `load_mangadex_manga`
+  - description: Dataframe for block `load_and_export_chapters` of the `load_mangadex_chapters`
       mage pipeline.
-    identifier: mage_load_mangadex_manga_export_data_to_postgres
+    identifier: mage_load_mangadex_chapters_load_and_export_chapters
     meta:
-      block_uuid: export_data_to_postgres
-      pipeline_uuid: load_mangadex_manga
-    name: load_mangadex_manga_export_data_to_postgres
-  - description: Dataframe for block `export_data_to_postgres` of the `load_mangadex_chapters`
-      mage pipeline.
-    identifier: mage_load_mangadex_chapters_export_data_to_postgres
-    meta:
-      block_uuid: export_data_to_postgres
+      block_uuid: load_and_export_chapters
       pipeline_uuid: load_mangadex_chapters
-    name: load_mangadex_chapters_export_data_to_postgres
+    name: load_mangadex_chapters_load_and_export_chapters
+  - description: Dataframe for block `load_and_export_manga` of the `load_mangadex_manga`
+      mage pipeline.
+    identifier: mage_load_mangadex_manga_load_and_export_manga
+    meta:
+      block_uuid: load_and_export_manga
+      pipeline_uuid: load_mangadex_manga
+    name: load_mangadex_manga_load_and_export_manga
 version: 2
