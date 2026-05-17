@@ -4,14 +4,34 @@ services:
   postgres:
     image: postgres:17
     container_name: postgres
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - log_statement=all
+      - -c
+      - log_duration=on
+      - -c
+      - log_min_duration_statement=0
+      - -c
+      - "log_line_prefix=%t [%p] user=%u db=%d app=%a client=%h "
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: manga_tracker
     ports:
       - "5432:5432"
-    volumes: 
+    volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d manga_tracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
   mage:
     env_file:
       - .env
@@ -29,18 +49,26 @@ services:
     ports:
       - "6789:6789"
     volumes:
-      - .:/home/src/  
+      - .:/home/src/
     restart: on-failure:5
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
   flyway:
-      image: flyway/flyway:10
-      container_name: flyway
-      command: -url=jdbc:postgresql://postgres:5432/manga_tracker -user=postgres -password=postgres -locations=filesystem:/flyway/sql -connectRetries=10 migrate
-      volumes:
-        - ./manga_tracker/utils/migrations:/flyway/sql
-      depends_on:
-        - postgres
+    image: flyway/flyway:10
+    container_name: flyway
+    command: migrate
+    environment:
+      FLYWAY_URL: jdbc:postgresql://postgres:5432/manga_tracker
+      FLYWAY_USER: postgres
+      FLYWAY_PASSWORD: postgres
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_DEFAULT_SCHEMA: public
+    volumes:
+      - ./manga_tracker/utils/migrations:/flyway/sql
+    depends_on:
+      postgres:
+        condition: service_healthy
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -59,8 +87,10 @@ services:
     volumes:
       - ./manga_tracker/api:/app/manga_tracker/api
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     restart: on-failure:5
   metabase:
     image: metabase/metabase:v0.55.12
@@ -76,7 +106,8 @@ services:
       MB_DB_USER: ${POSTGRES_USER}
       MB_DB_PASS: ${POSTGRES_PASSWORD}
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - 3000:3000
 volumes:
