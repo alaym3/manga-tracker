@@ -20,17 +20,17 @@ MangaDex API
 │                        │                  │◀──│   dbt    │ │
 │  ┌────────┐            │                  │   └──────────┘ │
 │  │ flyway │──migrate──▶│                  │                │
-│  └────────┘            │                  │   ┌──────────┐ │
-│                        │                  │──▶│   api    │──▶ :8000
-│                        │   metabase db    │   │ FastAPI  │ │
-│                        │                  │   └──────────┘ │
-│                        └──────────────────┘                │
-│                                │                           │
-│                                ▼                           │
-│                         ┌──────────┐                       │
-│                         │ metabase │──────────────────────▶ :3000
-│                         └──────────┘                       │
-└─────────────────────────────────────────────────────────────┘
+│  └────────┘            │                  │   ┌──────────┐    ┌───────┐ │
+│                        │                  │──▶│   api    │──▶│ redis │ │
+│                        │   metabase db    │   │ FastAPI  │◀──│       │ │
+│                        │                  │   └──────────┘    └───────┘ │
+│                        └──────────────────┘        │ :8000             │
+│                                │                                        │
+│                                ▼                                        │
+│                         ┌──────────┐                                    │
+│                         │ metabase │─────────────────────────────────▶ :3000
+│                         └──────────┘                                    │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Data flow:**
@@ -49,6 +49,7 @@ MangaDex API
 | `postgres` | 5432 | Main database. Hosts `manga_tracker` (app data) and `metabase` (Metabase internals). |
 | `mage` | 6789 | Pipeline orchestrator. Runs the data loaders that fetch from MangaDex. |
 | `flyway` | — | Runs SQL migrations on startup. Exits once done. |
+| `redis` | 6379 | In-memory cache for API responses. |
 | `api` | 8000 | FastAPI REST API over the staging schema. |
 | `metabase` | 3000 | BI dashboard connected to the staging schema. |
 
@@ -251,6 +252,81 @@ Same pattern as `load_mangadex_chapters` but for manga titles. Uses 2-month date
 | `exporter_config_profile` | Postgres connection profile. |
 
 ---
+
+## Response caching (Redis)
+
+All API list endpoints cache their responses in Redis so repeated requests with the same parameters don't hit Postgres.
+
+**How it works:**
+
+```
+Request arrives
+      │
+      ▼
+Check Redis for cache_key
+      │
+  ┌───┴────────────────┐
+  │ HIT                │ MISS
+  │                    ▼
+  │           Query Postgres
+  │                    │
+  │           Store result in Redis
+  │           with TTL
+  └───────────────┐    │
+                  ▼    ▼
+              Return response
+```
+
+**Cache keys and TTLs:**
+
+| Endpoint | Cache key | TTL |
+|---|---|---|
+| `GET /manga` | `manga:list:{status}:{tag}:{content_rating}:{limit}:{offset}` | 1 hour |
+| `GET /manga/{id}` | `manga:{mangadex_id}` | 24 hours |
+| `GET /manga/{id}/chapters` | `manga:{mangadex_id}:chapters:{limit}:{offset}` | 1 hour |
+| `GET /chapters/recent` | `chapters:recent:{limit}:{offset}` | 10 minutes |
+
+Every unique combination of query parameters gets its own cache entry, so `GET /manga?status=ongoing` and `GET /manga?status=completed` are cached independently.
+
+**TTL rationale:** The data only changes when a Mage pipeline run finishes. Pipelines run at most hourly, so a 1-hour TTL means the cache is always fresh relative to what's in the database. Individual manga metadata (`GET /manga/{id}`) rarely changes at all, so 24 hours is safe. Recent chapters use a shorter 10-minute TTL since new uploads appear more frequently.
+
+**Fail-open design:** If Redis is unavailable (e.g. the container is restarting), the API silently skips the cache and queries Postgres directly. No errors are surfaced to the caller. The cache is an optimization, not a dependency.
+
+**Interacting with Redis:**
+
+Connect to the Redis CLI inside the running container:
+
+```bash
+docker-compose exec redis redis-cli
+```
+
+You're now in an interactive shell connected to the cache:
+
+```
+127.0.0.1:6379> KEYS *
+127.0.0.1:6379> GET "chapters:recent:20:0"
+127.0.0.1:6379> TTL "manga:list:None:None:None:20:0"
+127.0.0.1:6379> FLUSHALL
+127.0.0.1:6379> exit
+```
+
+Or run a single command without entering the shell:
+
+```bash
+docker-compose exec redis redis-cli KEYS "*"
+docker-compose exec redis redis-cli FLUSHALL
+```
+
+Useful commands:
+
+| Command | What it does |
+|---|---|
+| `KEYS *` | List every cached key |
+| `GET <key>` | Show the stored JSON for a key |
+| `TTL <key>` | Seconds until the key expires (`-2` means the key doesn't exist) |
+| `DEL <key>` | Delete one key — forces a cache miss on the next request |
+| `FLUSHALL` | Wipe everything |
+| `DBSIZE` | How many keys are currently stored |
 
 ## REST API
 
