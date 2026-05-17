@@ -41,6 +41,12 @@ services:
         - ./manga_tracker/utils/migrations:/flyway/sql
       depends_on:
         - postgres
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    restart: on-failure:5
   api:
     build:
       context: .
@@ -54,6 +60,7 @@ services:
       - ./manga_tracker/api:/app/manga_tracker/api
     depends_on:
       - postgres
+      - redis
     restart: on-failure:5
   metabase:
     image: metabase/metabase:v0.55.12

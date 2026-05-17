@@ -1,11 +1,20 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..cache import (
+    CHAPTERS_TTL,
+    MANGA_DETAIL_TTL,
+    MANGA_LIST_TTL,
+    get_cached,
+    get_redis,
+    set_cached,
+)
 from ..database import get_db
-from ..models import MangaDetail, MangaSummary, PaginatedChapters, PaginatedManga
+from ..models import MangaDetail, PaginatedChapters, PaginatedManga
 
 router = APIRouter(prefix="/manga", tags=["manga"])
 
@@ -18,7 +27,12 @@ async def list_manga(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
+    cache_key = f"manga:list:{status}:{tag}:{content_rating}:{limit}:{offset}"
+    if cached := await get_cached(redis, cache_key):
+        return cached
+
     conditions = ["1=1"]
     params: dict = {"limit": limit, "offset": offset}
 
@@ -55,11 +69,21 @@ async def list_manga(
         )
     ).mappings().all()
 
-    return PaginatedManga(total=total, limit=limit, offset=offset, data=rows)
+    result = PaginatedManga(total=total, limit=limit, offset=offset, data=rows)
+    await set_cached(redis, cache_key, result.model_dump(), MANGA_LIST_TTL)
+    return result
 
 
 @router.get("/{mangadex_id}", response_model=MangaDetail)
-async def get_manga(mangadex_id: str, db: AsyncSession = Depends(get_db)):
+async def get_manga(
+    mangadex_id: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    cache_key = f"manga:{mangadex_id}"
+    if cached := await get_cached(redis, cache_key):
+        return cached
+
     row = (
         await db.execute(
             text("SELECT * FROM staging.stg_manga WHERE mangadex_id = :id"),
@@ -70,7 +94,9 @@ async def get_manga(mangadex_id: str, db: AsyncSession = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Manga not found")
 
-    return row
+    result = MangaDetail.model_validate(dict(row))
+    await set_cached(redis, cache_key, result.model_dump(), MANGA_DETAIL_TTL)
+    return result
 
 
 @router.get("/{mangadex_id}/chapters", response_model=PaginatedChapters)
@@ -79,7 +105,12 @@ async def get_manga_chapters(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
+    cache_key = f"manga:{mangadex_id}:chapters:{limit}:{offset}"
+    if cached := await get_cached(redis, cache_key):
+        return cached
+
     params = {"id": mangadex_id, "limit": limit, "offset": offset}
 
     total = (
@@ -104,4 +135,6 @@ async def get_manga_chapters(
         )
     ).mappings().all()
 
-    return PaginatedChapters(total=total, limit=limit, offset=offset, data=rows)
+    result = PaginatedChapters(total=total, limit=limit, offset=offset, data=rows)
+    await set_cached(redis, cache_key, result.model_dump(), CHAPTERS_TTL)
+    return result
