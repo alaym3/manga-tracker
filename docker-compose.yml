@@ -41,6 +41,20 @@ services:
         - ./manga_tracker/utils/migrations:/flyway/sql
       depends_on:
         - postgres
+  api:
+    build:
+      context: .
+      dockerfile: api.Dockerfile
+    container_name: manga_api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/manga_tracker
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./manga_tracker/api:/app/manga_tracker/api
+    depends_on:
+      - postgres
+    restart: on-failure:5
   metabase:
     image: metabase/metabase:v0.55.12
     container_name: metabase
