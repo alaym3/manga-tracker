@@ -329,6 +329,62 @@ The most recently published available chapters across all manga.
 curl "http://localhost:8000/chapters/recent?limit=20" | jq '.data[] | {title, published_at}'
 ```
 
+### Fetching all records (full pagination)
+
+Every list endpoint returns a `total` field. Use it to loop through all pages until you've collected everything. The maximum page size is 100.
+
+```python
+import httpx
+
+def get_all_manga(base_url="http://localhost:8000"):
+    all_manga = []
+    limit = 100
+    offset = 0
+
+    while True:
+        response = httpx.get(f"{base_url}/manga", params={"limit": limit, "offset": offset})
+        response.raise_for_status()
+        data = response.json()
+
+        all_manga.extend(data["data"])
+
+        if offset + limit >= data["total"]:
+            break
+
+        offset += limit
+
+    return all_manga
+```
+
+The same pattern works for any list endpoint — swap the URL and adjust the params:
+
+```python
+# All chapters for a specific manga
+def get_all_chapters(mangadex_id, base_url="http://localhost:8000"):
+    all_chapters = []
+    limit = 100
+    offset = 0
+
+    while True:
+        response = httpx.get(
+            f"{base_url}/manga/{mangadex_id}/chapters",
+            params={"limit": limit, "offset": offset},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        all_chapters.extend(data["data"])
+
+        if offset + limit >= data["total"]:
+            break
+
+        offset += limit
+
+    return all_chapters
+```
+
+> **Note:** With 90k manga at 100 per page that's 900 HTTP requests. If you need the full dataset in one shot, querying `staging.stg_manga` directly in Postgres is faster. The API pagination is designed for consumers that only need a slice at a time.
+
 ### Response shapes
 
 **`PaginatedManga`**
