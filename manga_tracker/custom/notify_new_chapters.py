@@ -18,9 +18,9 @@ if "custom" not in globals():
 
 @custom
 def notify_new_chapters(*args, **kwargs):
-    webhook_url = os.environ.get("DISCORD_WEBHOOK_URL")
+    webhook_url = os.environ.get("DISCORD_CHAPTERS_WEBHOOK_URL")
     if not webhook_url:
-        print("[notify_new_chapters] DISCORD_WEBHOOK_URL not set — skipping.")
+        print("[notify_new_chapters] DISCORD_CHAPTERS_WEBHOOK_URL not set — skipping.")
         return
     send_chapter_notifications(
         webhook_url=webhook_url,
