@@ -18,4 +18,11 @@ sources:
       block_uuid: load_and_export_manga
       pipeline_uuid: load_mangadex_manga
     name: load_mangadex_manga_load_and_export_manga
+  - description: Dataframe for block `load_and_export_statistics` of the `load_mangadex_statistics`
+      mage pipeline.
+    identifier: mage_load_mangadex_statistics_load_and_export_statistics
+    meta:
+      block_uuid: load_and_export_statistics
+      pipeline_uuid: load_mangadex_statistics
+    name: load_mangadex_statistics_load_and_export_statistics
 version: 2

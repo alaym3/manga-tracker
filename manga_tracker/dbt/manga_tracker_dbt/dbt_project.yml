@@ -73,5 +73,18 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.external_url IS 'External hosting URL from attributes.externalUrl. Non-null for officially hosted chapters e.g. Viz, Manga Plus.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
+      stg_manga_statistics:
+        +materialized: incremental
+        post-hook:
+          - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Community statistics per manga from MangaDex GET /statistics/manga. One row per manga, merged on each pipeline run.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID matching staging.stg_manga.mangadex_id.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.rating_average IS 'Mean of all user ratings (1–10).';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.rating_bayesian IS 'Bayesian-weighted average rating. More stable for titles with few ratings.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.rating_distribution IS 'JSONB count of how many users gave each score, keys 1–10.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.follows IS 'Number of MangaDex users following this title.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.comments_count IS 'Total reply count across all comment threads for this title.';"
+          - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.pulled_at IS 'Timestamp of the statistics fetch that produced this row.';"
     core:
       +schema: core
+      manga:
+        +materialized: table

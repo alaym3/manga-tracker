@@ -33,6 +33,26 @@ sources:
           - name: pulled_at
             tests:
               - not_null
+      - name: manga_statistics
+        description: "Community statistics per manga from GET /statistics/manga. One row per manga, upserted on each pipeline run."
+        columns:
+          - name: mangadex_id
+            tests:
+              - not_null
+              - unique
+          - name: payload
+            tests:
+              - not_null
+          - name: pulled_at
+            tests:
+              - not_null
+      - name: user_follows
+        description: "Manga the user follows on MangaDex, with optional personal rating."
+        columns:
+          - name: mangadex_id
+            tests:
+              - not_null
+              - unique
 
 models:
   - name: stg_manga
@@ -100,5 +120,32 @@ models:
         tests:
           - not_null
       - name: ingested_at
+        tests:
+          - not_null
+
+  - name: stg_manga_statistics
+    description: "Cleaned community statistics per manga extracted from raw.manga_statistics."
+    columns:
+      - name: mangadex_id
+        tests:
+          - not_null
+          - unique
+      - name: pulled_at
+        tests:
+          - not_null
+
+  - name: manga
+    description: "Reporting-ready manga table joining metadata, community statistics, and personal follow/rating data."
+    columns:
+      - name: mangadex_id
+        tests:
+          - not_null
+          - unique
+      - name: title
+        tests:
+          - not_null:
+              config:
+                severity: warn
+      - name: is_followed
         tests:
           - not_null
