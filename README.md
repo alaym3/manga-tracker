@@ -37,8 +37,9 @@ MangaDex API
 
 1. **Mage** pipelines stream chapters and manga from the MangaDex API and upsert them into `raw.chapter_responses` and `raw.manga_responses` as JSONB payloads.
 2. **dbt** transforms the raw JSONB into clean, typed columns in `staging.stg_manga` and `staging.stg_chapters`.
-3. **The FastAPI service** queries the staging schema and serves the data over HTTP.
+3. **The FastAPI service** queries the staging schema and serves the data over HTTP. Every request is logged to `audit.api_requests`.
 4. **Metabase** connects to the same staging schema for dashboards and exploration.
+5. **Postgres** logs every SQL statement it receives — from any client (TablePlus, Mage, dbt, Metabase, psql) — with full duration and connection context.
 
 ---
 
@@ -175,6 +176,27 @@ Produced by dbt. These are the tables the API and Metabase query.
 | `last_pulled_at` | TIMESTAMPTZ | End timestamp of the last exported date chunk |
 | `updated_at` | TIMESTAMPTZ | When this checkpoint was last written |
 
+### `audit` schema — observability
+
+**`audit.api_requests`**
+
+Every HTTP request the FastAPI service handles is written here by the `AuditMiddleware`. The write is fire-and-forget — a failure to write never surfaces as an API error.
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | BIGSERIAL | Surrogate key |
+| `request_id` | UUID | Unique per request; also returned in the `X-Request-Id` response header |
+| `ts` | TIMESTAMPTZ | When the request was received |
+| `method` | TEXT | `GET`, `POST`, etc. |
+| `path` | TEXT | URL path, e.g. `/manga/abc123/chapters` |
+| `query_string` | TEXT | Raw query string, e.g. `limit=50&offset=100` |
+| `status_code` | INT | HTTP status of the response |
+| `duration_ms` | FLOAT | End-to-end request duration in milliseconds (includes DB + cache time) |
+| `client_ip` | TEXT | IP address of the caller |
+| `user_agent` | TEXT | `User-Agent` header |
+
+Indexed on `ts DESC` and `path` for the most common queries (recency lookup, per-endpoint analysis).
+
 ---
 
 ## Migrations
@@ -187,6 +209,7 @@ Migration files live in `manga_tracker/utils/migrations/` and use standard Flywa
 | `V2__create_metabase_db.sql` | Creates the `metabase` database (non-transactional — `CREATE DATABASE` can't run inside a Postgres transaction) |
 | `V3__init_raw_api_response_tables.sql` | Creates `raw.manga_responses` and `raw.chapter_responses` with indexes |
 | `V4__init_mage_pipeline_checkpoints.sql` | Creates `mage.pipeline_checkpoints` |
+| `V5__create_audit_schema.sql` | Creates `audit` schema, enables `pg_stat_statements` extension, creates `audit.api_requests` with indexes |
 
 To add a migration, create a new file with the next version number:
 
@@ -327,6 +350,135 @@ Useful commands:
 | `DEL <key>` | Delete one key — forces a cache miss on the next request |
 | `FLUSHALL` | Wipe everything |
 | `DBSIZE` | How many keys are currently stored |
+
+## Auditing
+
+The system has two layers of auditing that work independently: one at the API layer and one at the database layer. Together they let you answer questions like "which endpoint is slowest?", "who ran a full table scan?", "how many requests came in between 2–3pm?", and "did Metabase run a particularly expensive query?"
+
+### Layer 1: API request auditing
+
+`AuditMiddleware` in `manga_tracker/api/middleware.py` wraps every request. It:
+
+1. Records the start time before calling the route handler
+2. Lets the response complete normally
+3. Calculates total duration (including DB queries and cache lookups)
+4. Writes one row to `audit.api_requests` — asynchronously, in a separate DB session
+5. Attaches an `X-Request-Id` UUID to the response header
+
+The write is wrapped in a bare `except` block so a database blip never causes a request to fail. The audit is best-effort.
+
+**Querying API audit data:**
+
+```sql
+-- Request volume by endpoint over the last 24 hours
+SELECT path, COUNT(*) AS requests
+FROM audit.api_requests
+WHERE ts > now() - interval '24 hours'
+GROUP BY path
+ORDER BY requests DESC;
+
+-- P50 / P95 / P99 latency per endpoint
+SELECT
+    path,
+    ROUND(PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p50_ms,
+    ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p95_ms,
+    ROUND(PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms)::numeric, 1) AS p99_ms,
+    COUNT(*) AS calls
+FROM audit.api_requests
+GROUP BY path
+ORDER BY p95_ms DESC;
+
+-- Error rate (any 4xx or 5xx)
+SELECT
+    path,
+    COUNT(*) FILTER (WHERE status_code >= 400) AS errors,
+    COUNT(*) AS total,
+    ROUND(100.0 * COUNT(*) FILTER (WHERE status_code >= 400) / COUNT(*), 1) AS error_pct
+FROM audit.api_requests
+GROUP BY path
+ORDER BY error_pct DESC;
+
+-- Trace a specific request by ID (the ID is in the X-Request-Id response header)
+SELECT * FROM audit.api_requests WHERE request_id = '<uuid>';
+```
+
+You can also build all of these as Metabase questions by connecting to the `audit` schema.
+
+### Layer 2: Postgres query auditing
+
+The Postgres container is configured to log every statement it receives, regardless of the client. This catches queries from TablePlus, Mage pipeline runs, dbt model executions, Metabase dashboard loads, and direct `psql` sessions.
+
+**What's enabled (set via `command:` in docker-compose):**
+
+| Setting | Value | Effect |
+|---|---|---|
+| `shared_preload_libraries` | `pg_stat_statements` | Loads the query stats extension at startup |
+| `pg_stat_statements.track` | `all` | Tracks queries from all sources, including nested function calls |
+| `log_statement` | `all` | Logs the text of every statement to the Postgres log |
+| `log_duration` | `on` | Appends execution time to each log line |
+| `log_min_duration_statement` | `0` | Logs duration for every statement (not just slow ones) |
+| `log_line_prefix` | `'%t [%p] user=%u db=%d app=%a client=%h '` | Prefixes each log line with timestamp, PID, username, database, application name, and client host |
+
+The `app=%a` field in the prefix is the `application_name` connection parameter, which is set automatically by most clients:
+- **dbt**: sets `application_name` to something like `dbt`
+- **Metabase**: sets it to `Metabase`
+- **TablePlus**: sets it to `TablePlus` (or configurable)
+- **psql**: defaults to `psql`
+- **FastAPI/asyncpg**: defaults to the process name
+
+This lets you distinguish which system issued a query even when multiple clients are connected simultaneously.
+
+**Viewing Postgres logs:**
+
+```bash
+# Stream logs in real time
+docker-compose logs -f postgres
+
+# Filter for slow queries (> 1 second)
+docker-compose logs postgres | grep "duration: [0-9]\{4,\}"
+
+# Show only queries from Metabase
+docker-compose logs postgres | grep "app=Metabase"
+
+# Show only queries from dbt
+docker-compose logs postgres | grep "app=dbt"
+```
+
+**Querying the `pg_stat_statements` view:**
+
+`pg_stat_statements` accumulates statistics for every unique query fingerprint (parameters are normalized to `$1`, `$2`, etc.), so you can find expensive query patterns without sifting through logs.
+
+```sql
+-- Top 10 most time-consuming query shapes
+SELECT
+    query,
+    calls,
+    ROUND(total_exec_time::numeric, 2) AS total_ms,
+    ROUND(mean_exec_time::numeric, 2) AS mean_ms,
+    rows
+FROM pg_stat_statements
+WHERE query NOT LIKE '%pg_stat_statements%'
+ORDER BY total_exec_time DESC
+LIMIT 10;
+
+-- Queries with the worst cache hit ratio (high blks_read = lots of disk I/O)
+SELECT
+    query,
+    calls,
+    shared_blks_hit,
+    shared_blks_read,
+    ROUND(100.0 * shared_blks_hit / NULLIF(shared_blks_hit + shared_blks_read, 0), 1) AS cache_hit_pct
+FROM pg_stat_statements
+ORDER BY shared_blks_read DESC
+LIMIT 10;
+
+-- Reset stats (useful after a schema change or optimization)
+SELECT pg_stat_statements_reset();
+```
+
+Note: `pg_stat_statements` resets when the Postgres container restarts. It reflects the current container lifetime only.
+
+---
 
 ## REST API
 
@@ -506,9 +658,11 @@ manga-tracker/
 ├── requirements-api.txt           # FastAPI service dependencies
 ├── manga_tracker/
 │   ├── api/                       # FastAPI service
-│   │   ├── main.py                # App entry point, router registration
+│   │   ├── main.py                # App entry point, router + middleware registration
 │   │   ├── database.py            # Async SQLAlchemy engine + get_db() dependency
 │   │   ├── models.py              # Pydantic response models
+│   │   ├── cache.py               # Redis get/set helpers + TTL constants
+│   │   ├── middleware.py          # AuditMiddleware — logs every request to audit.api_requests
 │   │   └── routers/
 │   │       ├── manga.py           # /manga routes
 │   │       └── chapters.py        # /chapters routes
@@ -534,7 +688,8 @@ manga-tracker/
 │   │   │   ├── V1__create_schemas.sql
 │   │   │   ├── V2__create_metabase_db.sql
 │   │   │   ├── V3__init_raw_api_response_tables.sql
-│   │   │   └── V4__init_mage_pipeline_checkpoints.sql
+│   │   │   ├── V4__init_mage_pipeline_checkpoints.sql
+│   │   │   └── V5__create_audit_schema.sql
 │   │   └── sql/
 │   │       └── postgres/
 │   │           └── get_checkpoint.sql
