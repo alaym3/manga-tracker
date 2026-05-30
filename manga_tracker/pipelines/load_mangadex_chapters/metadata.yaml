@@ -23,7 +23,8 @@ blocks:
     file_source:
       path: dbt/manga_tracker_dbt/models/staging/stg_chapters.sql
       project_path: dbt/manga_tracker_dbt
-  downstream_blocks: []
+  downstream_blocks:
+  - notify_new_chapters
   executor_config: null
   executor_type: local_python
   has_callback: false
@@ -36,6 +37,22 @@ blocks:
   upstream_blocks:
   - load_and_export_chapters
   uuid: dbt/manga_tracker_dbt/models/staging/stg_chapters
+- all_upstream_blocks_executed: true
+  color: null
+  configuration: {}
+  downstream_blocks: []
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: notify_new_chapters
+  retry_config: null
+  status: not_executed
+  timeout: null
+  type: custom
+  upstream_blocks:
+  - dbt/manga_tracker_dbt/models/staging/stg_chapters
+  uuid: notify_new_chapters
 cache_block_output_in_memory: false
 callbacks: []
 concurrency_config: {}

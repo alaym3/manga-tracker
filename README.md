@@ -40,6 +40,7 @@ MangaDex API
 3. **The FastAPI service** queries the staging schema and serves the data over HTTP. Every request is logged to `audit.api_requests`.
 4. **Metabase** connects to the same staging schema for dashboards and exploration.
 5. **Postgres** logs every SQL statement it receives — from any client (TablePlus, Mage, dbt, Metabase, psql) — with full duration and connection context.
+6. **After each chapter pipeline run**, a `notify_new_chapters` block queries for newly ingested chapters belonging to manga in `raw.user_follows` and sends a Discord notification for each.
 
 ---
 
@@ -121,6 +122,16 @@ Append-only tables that store the full MangaDex API response payload as JSONB. T
 | `manga_id` | TEXT | Parent manga UUID (denormalized from relationships[]) |
 | `pulled_at` | TIMESTAMPTZ | When this record was fetched |
 | `payload` | JSONB | Full `data[]` item from the API response |
+
+**`raw.user_follows`**
+
+Manga the user wants new-chapter notifications for. Populated by running the `load_mangadex_follows` pipeline.
+
+| Column | Type | Description |
+|---|---|---|
+| `mangadex_id` | TEXT (PK) | MangaDex UUID, matching `staging.stg_manga.mangadex_id` |
+| `title` | TEXT | Human-readable title — stored here so notifications don't require a join |
+| `followed_at` | TIMESTAMPTZ | When the row was first inserted (set by DB default, never overwritten on re-sync) |
 
 ### `staging` schema — transformed data
 
@@ -210,6 +221,7 @@ Migration files live in `manga_tracker/utils/migrations/` and use standard Flywa
 | `V3__init_raw_api_response_tables.sql` | Creates `raw.manga_responses` and `raw.chapter_responses` with indexes |
 | `V4__init_mage_pipeline_checkpoints.sql` | Creates `mage.pipeline_checkpoints` |
 | `V5__create_audit_schema.sql` | Creates `audit` schema, enables `pg_stat_statements` extension, creates `audit.api_requests` with indexes |
+| `V6__create_user_follows.sql` | Creates `raw.user_follows`, which stores the manga a given user follows for new-chapter notification tracking |
 
 To add a migration, create a new file with the next version number:
 
@@ -254,6 +266,8 @@ Run the pipeline with no variables set. It reads the checkpoint (none exists), d
 
 Run on a schedule (e.g. hourly). The pipeline reads the checkpoint, generates one small date window covering the interval since the last run, fetches new chapters, and finishes in seconds.
 
+**After each run**, the `notify_new_chapters` custom block fires. It queries `staging.stg_chapters` joined against `raw.user_follows` for rows with `ingested_at` newer than its own watermark, sends one Discord message per manga (grouping multiple chapters), then advances its watermark. On the very first run it only sets the watermark — no notifications are sent — so historical chapters don't flood the feed.
+
 **Pipeline variables:**
 
 | Variable | Description |
@@ -273,6 +287,33 @@ Same pattern as `load_mangadex_chapters` but for manga titles. Uses 2-month date
 | `manga_since_date` | Optional ISO date override. |
 | `max_records` | Optional cap for dev runs. |
 | `exporter_config_profile` | Postgres connection profile. |
+
+### `load_mangadex_follows`
+
+Authenticates with the MangaDex API using a Personal API Client and syncs the authenticated user's followed manga into `raw.user_follows`. Run this once to populate your follows list, then re-run whenever you follow something new on MangaDex.
+
+**How it works:**
+
+1. Exchanges `MANGADEX_CLIENT_ID`, `MANGADEX_CLIENT_SECRET`, `MANGADEX_USERNAME`, and `MANGADEX_PASSWORD` for a short-lived Bearer token via the MangaDex OAuth endpoint.
+2. Paginates through `GET /user/follows/manga` (100 per page) to collect every followed manga.
+3. Upserts into `raw.user_follows` on `mangadex_id` — re-running is safe and won't reset `followed_at` timestamps.
+
+**Setup:**
+
+Create a Personal API Client at **mangadex.org → (avatar) → Account Settings → API Clients**, then set in `.env`:
+
+```
+MANGADEX_CLIENT_ID=personal-client-...
+MANGADEX_CLIENT_SECRET=...
+MANGADEX_USERNAME=your_username
+MANGADEX_PASSWORD=your_password
+```
+
+**Pipeline variables:**
+
+| Variable | Description |
+|---|---|
+| `exporter_config_profile` | Postgres connection profile. Default: `manga_tracker_postgres`. |
 
 ---
 
@@ -480,6 +521,57 @@ Note: `pg_stat_statements` resets when the Postgres container restarts. It refle
 
 ---
 
+## Chapter notifications (Discord)
+
+When `load_mangadex_chapters` finishes its dbt run, a `notify_new_chapters` custom block fires automatically. It checks for any chapters ingested since the last notification run, and sends one Discord message per manga with all new chapters listed.
+
+### How it works
+
+```
+load_mangadex_chapters
+        │
+        ▼
+  stg_chapters (dbt)
+        │
+        ▼
+notify_new_chapters
+  │
+  ├─ Read watermark from mage.pipeline_checkpoints
+  ├─ Query staging.stg_chapters JOIN raw.user_follows WHERE ingested_at > watermark
+  ├─ POST one Discord message per manga (chapters grouped to avoid spam)
+  └─ Advance watermark
+```
+
+The watermark lives in `mage.pipeline_checkpoints` under `pipeline_name = 'notify_new_chapters'`. On the very first run it is set to the current time without sending anything, so backfilled history doesn't flood the feed.
+
+### Setup
+
+**1. Create a Discord server and webhook**
+
+1. Open Discord → **+** in the sidebar → Create My Own → For me and my friends
+2. Right-click a text channel → **Edit Channel** → **Integrations** → **Webhooks** → **New Webhook**
+3. Copy the webhook URL
+
+**2. Set the env var**
+
+```
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+**3. Populate `raw.user_follows`**
+
+Run the `load_mangadex_follows` pipeline (see above). It authenticates with MangaDex and syncs your followed manga automatically. Re-run whenever you follow something new.
+
+### Example notification
+
+```
+New chapter: Berserk
+Ch. 374 — The Dragonslayer Awakens
+Ch. 375
+```
+
+---
+
 ## REST API
 
 The FastAPI service runs on **http://localhost:8000**. Interactive docs (Swagger UI) are available at **http://localhost:8000/docs**.
@@ -666,16 +758,20 @@ manga-tracker/
 │   │   └── routers/
 │   │       ├── manga.py           # /manga routes
 │   │       └── chapters.py        # /chapters routes
+│   ├── custom/
+│   │   └── notify_new_chapters.py        # Fires Discord notifications after stg_chapters dbt run
 │   ├── data_loaders/
 │   │   ├── load_and_export_chapters.py   # Streams + exports chapters, checkpoints
 │   │   ├── load_and_export_manga.py      # Streams + exports manga, checkpoints
-│   │   └── load_data_from_postgres.py    # Generic Postgres loader block
+│   │   ├── load_data_from_postgres.py    # Generic Postgres loader block
+│   │   └── lookup_follows.py             # Fetches user follows from MangaDex API
 │   ├── data_exporters/
 │   │   └── export_data_to_postgres.py    # Generic Postgres exporter block
 │   ├── utils/
 │   │   ├── loaders/
 │   │   │   ├── mangadex/
 │   │   │   │   ├── chapters.py    # MangaDex chapter streaming logic
+│   │   │   │   ├── follows.py     # MangaDex authenticated follows loader
 │   │   │   │   └── manga.py       # MangaDex manga streaming logic
 │   │   │   └── postgres/
 │   │   │       └── loader.py      # Shared Postgres read utility
@@ -683,13 +779,18 @@ manga-tracker/
 │   │   │   └── postgres/
 │   │   │       └── exporter.py    # Shared Postgres write utility
 │   │   ├── helpers/
-│   │   │   └── api_request.py     # HTTP request helper with retry logic
+│   │   │   ├── api_request.py     # HTTP request helper with retry logic
+│   │   │   └── checkpoint.py      # Shared read/write helpers for mage.pipeline_checkpoints
+│   │   ├── notifiers/
+│   │   │   ├── chapter_notifier.py  # Queries new chapters + dispatches Discord notifications
+│   │   │   └── discord.py           # Discord incoming webhook helper
 │   │   ├── migrations/            # Flyway SQL migration files
 │   │   │   ├── V1__create_schemas.sql
 │   │   │   ├── V2__create_metabase_db.sql
 │   │   │   ├── V3__init_raw_api_response_tables.sql
 │   │   │   ├── V4__init_mage_pipeline_checkpoints.sql
-│   │   │   └── V5__create_audit_schema.sql
+│   │   │   ├── V5__create_audit_schema.sql
+│   │   │   └── V6__create_user_follows.sql
 │   │   └── sql/
 │   │       └── postgres/
 │   │           └── get_checkpoint.sql
@@ -701,6 +802,8 @@ manga-tracker/
 │   │               └── stg_chapters.sql
 │   └── pipelines/
 │       ├── load_mangadex_chapters/
+│       │   └── metadata.yaml
+│       ├── load_mangadex_follows/
 │       │   └── metadata.yaml
 │       └── load_mangadex_manga/
 │           └── metadata.yaml
