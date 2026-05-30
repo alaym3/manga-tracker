@@ -280,6 +280,8 @@ Run on a schedule (e.g. hourly). The pipeline reads the checkpoint, generates on
 
 Same pattern as `load_mangadex_chapters` but for manga titles. Uses 2-month date windows (manga is less frequent than chapters, so the windows don't need to be as small). ~90k manga total.
 
+**After each run**, the `notify_new_manga` custom block fires. It queries `staging.stg_manga` for rows with `ingested_at` newer than its watermark whose `tags` overlap with the `notification_tags` pipeline variable, and sends one Discord message per matching manga. Configure the tags you care about directly in the pipeline variables.
+
 **Pipeline variables:**
 
 | Variable | Description |
@@ -287,6 +289,7 @@ Same pattern as `load_mangadex_chapters` but for manga titles. Uses 2-month date
 | `manga_since_date` | Optional ISO date override. |
 | `max_records` | Optional cap for dev runs. |
 | `exporter_config_profile` | Postgres connection profile. |
+| `notification_tags` | List of tags to match (e.g. `["Action", "Fantasy"]`). Notifications are skipped if empty. |
 
 ### `load_mangadex_follows`
 
@@ -521,54 +524,76 @@ Note: `pg_stat_statements` resets when the Postgres container restarts. It refle
 
 ---
 
-## Chapter notifications (Discord)
+## Discord notifications
 
-When `load_mangadex_chapters` finishes its dbt run, a `notify_new_chapters` custom block fires automatically. It checks for any chapters ingested since the last notification run, and sends one Discord message per manga with all new chapters listed.
+Both `load_mangadex_chapters` and `load_mangadex_manga` fire a Discord notification block after their dbt run. Each pipeline has its own webhook URL (separate Discord channels) and its own watermark in `mage.pipeline_checkpoints` — so the two notification streams are fully independent.
 
-### How it works
+The shared watermark pattern (`utils/notifiers/base.py`) works the same in both: on the very first run the watermark is set to now without sending anything, so backfilled history never floods the feed.
+
+### New chapters (followed manga)
+
+`notify_new_chapters` runs after `stg_chapters`. It queries `staging.stg_chapters JOIN raw.user_follows` for rows ingested since the last run and sends one message per manga, grouping multiple chapters together.
 
 ```
-load_mangadex_chapters
-        │
-        ▼
-  stg_chapters (dbt)
-        │
-        ▼
-notify_new_chapters
-  │
-  ├─ Read watermark from mage.pipeline_checkpoints
-  ├─ Query staging.stg_chapters JOIN raw.user_follows WHERE ingested_at > watermark
-  ├─ POST one Discord message per manga (chapters grouped to avoid spam)
+load_mangadex_chapters → stg_chapters (dbt) → notify_new_chapters
+  ├─ Query new chapters for followed manga since watermark
+  ├─ POST one Discord message per manga (chapters grouped)
   └─ Advance watermark
 ```
 
-The watermark lives in `mage.pipeline_checkpoints` under `pipeline_name = 'notify_new_chapters'`. On the very first run it is set to the current time without sending anything, so backfilled history doesn't flood the feed.
+**Required env var:** `DISCORD_CHAPTERS_WEBHOOK_URL`
 
-### Setup
-
-**1. Create a Discord server and webhook**
-
-1. Open Discord → **+** in the sidebar → Create My Own → For me and my friends
-2. Right-click a text channel → **Edit Channel** → **Integrations** → **Webhooks** → **New Webhook**
-3. Copy the webhook URL
-
-**2. Set the env var**
-
-```
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-```
-
-**3. Populate `raw.user_follows`**
-
-Run the `load_mangadex_follows` pipeline (see above). It authenticates with MangaDex and syncs your followed manga automatically. Re-run whenever you follow something new.
-
-### Example notification
-
+**Example:**
 ```
 New chapter: Berserk
 Ch. 374 — The Dragonslayer Awakens
 Ch. 375
 ```
+
+### New manga (tag filter)
+
+`notify_new_manga` runs after `stg_manga`. It queries `staging.stg_manga` for rows ingested since the last run whose `tags` overlap with the `notification_tags` pipeline variable, and sends one message per match.
+
+```
+load_mangadex_manga → stg_manga (dbt) → notify_new_manga
+  ├─ Query new manga matching notification_tags since watermark
+  ├─ POST one Discord message per manga
+  └─ Advance watermark
+```
+
+**Required env var:** `DISCORD_MANGA_WEBHOOK_URL`
+
+Set `notification_tags` in `load_mangadex_manga/metadata.yaml`:
+```yaml
+notification_tags:
+  - Action
+  - Fantasy
+```
+
+**Example:**
+```
+New manga: Some Title
+Action · Fantasy | ongoing | 2024
+```
+
+### Setup
+
+**1. Create a Discord server with two channels and one webhook per channel**
+
+1. Open Discord → **+** in the sidebar → Create My Own → For me and my friends
+2. Create two text channels (e.g. `#new-chapters`, `#new-manga`)
+3. For each: right-click the channel → **Edit Channel** → **Integrations** → **Webhooks** → **New Webhook** → copy URL
+
+**2. Set the env vars**
+
+```
+DISCORD_CHAPTERS_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_MANGA_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+**3. Populate `raw.user_follows`**
+
+Run the `load_mangadex_follows` pipeline. Re-run whenever you follow something new on MangaDex.
 
 ---
 
@@ -759,7 +784,8 @@ manga-tracker/
 │   │       ├── manga.py           # /manga routes
 │   │       └── chapters.py        # /chapters routes
 │   ├── custom/
-│   │   └── notify_new_chapters.py        # Fires Discord notifications after stg_chapters dbt run
+│   │   ├── notify_new_chapters.py        # Fires Discord notifications after stg_chapters dbt run
+│   │   └── notify_new_manga.py           # Fires Discord notifications after stg_manga dbt run
 │   ├── data_loaders/
 │   │   ├── load_and_export_chapters.py   # Streams + exports chapters, checkpoints
 │   │   ├── load_and_export_manga.py      # Streams + exports manga, checkpoints
@@ -782,7 +808,9 @@ manga-tracker/
 │   │   │   ├── api_request.py     # HTTP request helper with retry logic
 │   │   │   └── checkpoint.py      # Shared read/write helpers for mage.pipeline_checkpoints
 │   │   ├── notifiers/
+│   │   │   ├── base.py              # Shared run_with_watermark wrapper used by all notifiers
 │   │   │   ├── chapter_notifier.py  # Queries new chapters + dispatches Discord notifications
+│   │   │   ├── manga_notifier.py    # Queries new tag-matched manga + dispatches Discord notifications
 │   │   │   └── discord.py           # Discord incoming webhook helper
 │   │   ├── migrations/            # Flyway SQL migration files
 │   │   │   ├── V1__create_schemas.sql

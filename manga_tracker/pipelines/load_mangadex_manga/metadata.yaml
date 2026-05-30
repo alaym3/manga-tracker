@@ -7,7 +7,8 @@ blocks:
     file_source:
       path: dbt/manga_tracker_dbt/models/staging/stg_manga.sql
       project_path: dbt/manga_tracker_dbt
-  downstream_blocks: []
+  downstream_blocks:
+  - notify_new_manga
   executor_config: null
   executor_type: local_python
   has_callback: false
@@ -20,6 +21,22 @@ blocks:
   upstream_blocks:
   - load_and_export_manga
   uuid: dbt/manga_tracker_dbt/models/staging/stg_manga
+- all_upstream_blocks_executed: true
+  color: null
+  configuration: {}
+  downstream_blocks: []
+  executor_config: null
+  executor_type: local_python
+  has_callback: false
+  language: python
+  name: notify_new_manga
+  retry_config: null
+  status: not_executed
+  timeout: null
+  type: custom
+  upstream_blocks:
+  - dbt/manga_tracker_dbt/models/staging/stg_manga
+  uuid: notify_new_manga
 - all_upstream_blocks_executed: true
   color: null
   configuration:
@@ -70,5 +87,9 @@ variables:
   - mangadex_id
   manual_run_from_date: '2020-01-01'
   manual_run_to_date: '2020-01-01'
+  notification_tags: 
+  - Horror
+  - Girls' Love
+  - Boys' Love
 variables_dir: /home/src/mage_data/manga_tracker
 widgets: []
