@@ -41,6 +41,7 @@ MangaDex API
 4. **Metabase** connects to the same staging schema for dashboards and exploration.
 5. **Postgres** logs every SQL statement it receives — from any client (TablePlus, Mage, dbt, Metabase, psql) — with full duration and connection context.
 6. **After each chapter pipeline run**, a `notify_new_chapters` block queries for newly ingested chapters belonging to manga in `raw.user_follows` and sends a Discord notification for each.
+7. **`load_mangadex_follows`** syncs the authenticated user's MangaDex follows and personal ratings into `raw.user_follows`. **`load_mangadex_statistics`** fetches community ratings, follows counts, and comment counts for all manga into `raw.manga_statistics`. **`compile_core_models`** joins both into `core.manga`, a reporting-ready table for Metabase.
 
 ---
 
@@ -125,13 +126,25 @@ Append-only tables that store the full MangaDex API response payload as JSONB. T
 
 **`raw.user_follows`**
 
-Manga the user wants new-chapter notifications for. Populated by running the `load_mangadex_follows` pipeline.
+Manga the authenticated user follows on MangaDex. Populated by the `load_mangadex_follows` pipeline, which also syncs personal ratings.
 
 | Column | Type | Description |
 |---|---|---|
 | `mangadex_id` | TEXT (PK) | MangaDex UUID, matching `staging.stg_manga.mangadex_id` |
 | `title` | TEXT | Human-readable title — stored here so notifications don't require a join |
 | `followed_at` | TIMESTAMPTZ | When the row was first inserted (set by DB default, never overwritten on re-sync) |
+| `rating` | INTEGER | User's personal rating (1–10). NULL if the title hasn't been rated. |
+| `rated_at` | TIMESTAMPTZ | When the rating was first created on MangaDex. NULL if unrated. |
+
+**`raw.manga_statistics`**
+
+Community statistics for all manga, fetched from the public `GET /statistics/manga` endpoint. One row per manga, upserted on every `load_mangadex_statistics` run.
+
+| Column | Type | Description |
+|---|---|---|
+| `mangadex_id` | TEXT (PK) | MangaDex UUID |
+| `payload` | JSONB | Raw stats object: `rating` (average, bayesian, distribution), `follows`, `comments` |
+| `pulled_at` | TIMESTAMPTZ | When this record was last fetched |
 
 ### `staging` schema — transformed data
 
@@ -177,6 +190,43 @@ Produced by dbt. These are the tables the API and Metabase query.
 | `external_url` | TEXT | For chapters hosted off MangaDex |
 | `ingested_at` | TIMESTAMPTZ | |
 
+**`staging.stg_manga_statistics`**
+
+Community statistics extracted from `raw.manga_statistics`. One row per manga, merged on each `load_mangadex_statistics` run.
+
+| Column | Type | Notes |
+|---|---|---|
+| `mangadex_id` | TEXT | Primary key |
+| `rating_average` | NUMERIC(5,2) | Mean of all user ratings (1–10) |
+| `rating_bayesian` | NUMERIC(5,2) | Bayesian-weighted rating — more stable for titles with few ratings |
+| `rating_distribution` | JSONB | Count of ratings per score, keys `"1"`–`"10"` |
+| `follows` | INTEGER | Number of MangaDex users following this title |
+| `comments_count` | INTEGER | Total reply count across all comment threads |
+| `pulled_at` | TIMESTAMPTZ | When this row's source statistics were fetched |
+
+### `core` schema — reporting layer
+
+Produced by dbt. Joins staging tables into a single reporting-ready table for Metabase. Run the `compile_core_models` pipeline to refresh.
+
+**`core.manga`**
+
+Joins `stg_manga`, `stg_manga_statistics`, and `raw.user_follows`. One row per manga. Statistics and follow columns are `NULL` until the corresponding pipelines have run.
+
+| Column | Type | Notes |
+|---|---|---|
+| `mangadex_id` | TEXT | Primary key |
+| `title`, `status`, `year`, `tags`, `authors`, … | — | All columns from `stg_manga` |
+| `rating_average` | NUMERIC | Community mean rating |
+| `rating_bayesian` | NUMERIC | Community Bayesian rating |
+| `rating_distribution` | JSONB | Per-score count |
+| `follows` | INTEGER | Community follow count |
+| `comments_count` | INTEGER | |
+| `statistics_pulled_at` | TIMESTAMPTZ | When the stats were last refreshed |
+| `user_rating` | INTEGER | Your personal rating (1–10). NULL if unrated. |
+| `user_rated_at` | TIMESTAMPTZ | When you first rated the title. NULL if unrated. |
+| `user_followed_at` | TIMESTAMPTZ | When the follow was synced. NULL if not followed. |
+| `is_followed` | BOOLEAN | TRUE when you follow this title |
+
 ### `mage` schema — pipeline metadata
 
 **`mage.pipeline_checkpoints`**
@@ -221,12 +271,14 @@ Migration files live in `manga_tracker/utils/migrations/` and use standard Flywa
 | `V3__init_raw_api_response_tables.sql` | Creates `raw.manga_responses` and `raw.chapter_responses` with indexes |
 | `V4__init_mage_pipeline_checkpoints.sql` | Creates `mage.pipeline_checkpoints` |
 | `V5__create_audit_schema.sql` | Creates `audit` schema, enables `pg_stat_statements` extension, creates `audit.api_requests` with indexes |
-| `V6__create_user_follows.sql` | Creates `raw.user_follows`, which stores the manga a given user follows for new-chapter notification tracking |
+| `V6__create_user_follows.sql` | Creates `raw.user_follows` for follow-based chapter notifications |
+| `V7__add_rating_to_user_follows.sql` | Adds `rating INTEGER` and `rated_at TIMESTAMPTZ` to `raw.user_follows` |
+| `V8__create_manga_statistics.sql` | Creates `raw.manga_statistics` for community ratings and follow counts |
 
 To add a migration, create a new file with the next version number:
 
 ```bash
-touch manga_tracker/utils/migrations/V5__my_change.sql
+touch manga_tracker/utils/migrations/V9__my_change.sql
 ```
 
 Flyway picks it up automatically on the next `docker-compose up`.
@@ -293,13 +345,14 @@ Same pattern as `load_mangadex_chapters` but for manga titles. Uses 2-month date
 
 ### `load_mangadex_follows`
 
-Authenticates with the MangaDex API using a Personal API Client and syncs the authenticated user's followed manga into `raw.user_follows`. Run this once to populate your follows list, then re-run whenever you follow something new on MangaDex.
+Authenticates with the MangaDex API using a Personal API Client and syncs the authenticated user's followed manga and personal ratings into `raw.user_follows`. Run this once to populate your follows list, then re-run whenever you follow or rate something new on MangaDex.
 
 **How it works:**
 
 1. Exchanges `MANGADEX_CLIENT_ID`, `MANGADEX_CLIENT_SECRET`, `MANGADEX_USERNAME`, and `MANGADEX_PASSWORD` for a short-lived Bearer token via the MangaDex OAuth endpoint.
 2. Paginates through `GET /user/follows/manga` (100 per page) to collect every followed manga.
-3. Upserts into `raw.user_follows` on `mangadex_id` — re-running is safe and won't reset `followed_at` timestamps.
+3. Fetches personal ratings from `GET /rating` for all followed manga IDs (batched 100 at a time).
+4. Upserts into `raw.user_follows` on `mangadex_id` — re-running is safe and won't reset `followed_at` timestamps. Ratings are updated on every sync.
 
 **Setup:**
 
@@ -317,6 +370,39 @@ MANGADEX_PASSWORD=your_password
 | Variable | Description |
 |---|---|
 | `exporter_config_profile` | Postgres connection profile. Default: `manga_tracker_postgres`. |
+
+### `load_mangadex_statistics`
+
+Fetches community statistics for all manga in `raw.manga_responses` from the public MangaDex `GET /statistics/manga` endpoint and upserts them into `raw.manga_statistics`. No authentication required.
+
+**How it works:**
+
+- Reads all `mangadex_id` values from `raw.manga_responses` in a single query (~90k IDs).
+- Batches them 100 at a time and calls `GET /statistics/manga` for each batch, writing results to Postgres immediately after each batch. Memory usage stays flat regardless of total manga count.
+- Each run is a full refresh — statistics are always current as of the last pipeline execution.
+- After loading, runs `stg_manga_statistics` dbt model to clean and type-cast the raw payload.
+
+**Runtime:** ~7–8 minutes for 90k manga (900 batches × 0.5s sleep + API call time).
+
+**Pipeline variables:**
+
+| Variable | Description |
+|---|---|
+| `exporter_config_profile` | Postgres connection profile. Default: `manga_tracker_postgres`. |
+
+### `compile_core_models`
+
+Runs the `core/manga` dbt model, which joins `stg_manga`, `stg_manga_statistics`, and `raw.user_follows` into a single reporting-ready table for Metabase.
+
+Run this pipeline after any combination of the upstream pipelines have completed. Because `core.manga` depends on data from multiple pipelines with different schedules, it is intentionally decoupled from all of them.
+
+```
+load_mangadex_manga       → staging.stg_manga
+load_mangadex_statistics  → staging.stg_manga_statistics   ──▶  compile_core_models → core.manga
+load_mangadex_follows     → raw.user_follows
+```
+
+Statistics and follow/rating columns in `core.manga` are `NULL` for manga whose corresponding pipelines haven't run yet. This is expected — the `LEFT JOIN` design means new manga from `stg_manga` always appear immediately.
 
 ---
 
@@ -789,16 +875,18 @@ manga-tracker/
 │   ├── data_loaders/
 │   │   ├── load_and_export_chapters.py   # Streams + exports chapters, checkpoints
 │   │   ├── load_and_export_manga.py      # Streams + exports manga, checkpoints
+│   │   ├── load_and_export_statistics.py # Streams + exports community statistics in batches
 │   │   ├── load_data_from_postgres.py    # Generic Postgres loader block
-│   │   └── lookup_follows.py             # Fetches user follows from MangaDex API
+│   │   └── lookup_follows.py             # Fetches user follows + ratings from MangaDex API
 │   ├── data_exporters/
 │   │   └── export_data_to_postgres.py    # Generic Postgres exporter block
 │   ├── utils/
 │   │   ├── loaders/
 │   │   │   ├── mangadex/
 │   │   │   │   ├── chapters.py    # MangaDex chapter streaming logic
-│   │   │   │   ├── follows.py     # MangaDex authenticated follows loader
-│   │   │   │   └── manga.py       # MangaDex manga streaming logic
+│   │   │   │   ├── follows.py     # MangaDex authenticated follows + ratings loader
+│   │   │   │   ├── manga.py       # MangaDex manga streaming logic
+│   │   │   │   └── statistics.py  # MangaDex community statistics batch loader
 │   │   │   └── postgres/
 │   │   │       └── loader.py      # Shared Postgres read utility
 │   │   ├── exporters/
@@ -818,22 +906,31 @@ manga-tracker/
 │   │   │   ├── V3__init_raw_api_response_tables.sql
 │   │   │   ├── V4__init_mage_pipeline_checkpoints.sql
 │   │   │   ├── V5__create_audit_schema.sql
-│   │   │   └── V6__create_user_follows.sql
+│   │   │   ├── V6__create_user_follows.sql
+│   │   │   ├── V7__add_rating_to_user_follows.sql
+│   │   │   └── V8__create_manga_statistics.sql
 │   │   └── sql/
 │   │       └── postgres/
 │   │           └── get_checkpoint.sql
 │   ├── dbt/
 │   │   └── manga_tracker_dbt/
 │   │       └── models/
-│   │           └── staging/
-│   │               ├── stg_manga.sql
-│   │               └── stg_chapters.sql
+│   │           ├── staging/
+│   │           │   ├── stg_manga.sql
+│   │           │   ├── stg_chapters.sql
+│   │           │   └── stg_manga_statistics.sql
+│   │           └── core/
+│   │               └── manga.sql
 │   └── pipelines/
+│       ├── compile_core_models/
+│       │   └── metadata.yaml
 │       ├── load_mangadex_chapters/
 │       │   └── metadata.yaml
 │       ├── load_mangadex_follows/
 │       │   └── metadata.yaml
-│       └── load_mangadex_manga/
+│       ├── load_mangadex_manga/
+│       │   └── metadata.yaml
+│       └── load_mangadex_statistics/
 │           └── metadata.yaml
 ```
 

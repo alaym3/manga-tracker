@@ -1,13 +1,15 @@
 """
 manga_tracker/utils/loaders/mangadex/follows.py
 
-Fetches the authenticated user's followed manga from the MangaDex API.
-Requires a Personal API Client — see mangadex.org > Account > API Clients.
+Fetches the authenticated user's followed manga and personal ratings from the
+MangaDex API. Requires a Personal API Client — see mangadex.org > Account >
+API Clients.
 
-Auth uses the OAuth password grant since the follows list is user-scoped.
+Auth uses the OAuth password grant since follows and ratings are user-scoped.
 The token endpoint (auth.mangadex.org) uses form-encoded POST, not JSON, so
 it goes through requests directly rather than make_api_request. Pagination
-of the follows list uses make_api_request for standard retry behaviour.
+of the follows list and ratings batching use make_api_request for standard
+retry behaviour.
 
 Required env vars:
     MANGADEX_CLIENT_ID
@@ -18,7 +20,8 @@ Required env vars:
 
 import os
 import time
-from typing import List
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote
 
 import pandas as pd
@@ -28,7 +31,9 @@ from manga_tracker.utils.helpers.api_request import make_api_request
 
 _AUTH_URL = "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token"
 _FOLLOWS_URL = "https://api.mangadex.org/user/follows/manga"
+_RATINGS_URL = "https://api.mangadex.org/rating"
 _PAGE_LIMIT = 100
+_RATINGS_BATCH = 100
 _SLEEP_BETWEEN_PAGES = 0.5
 _HEADERS = {
     "Accept": "application/json",
@@ -97,31 +102,84 @@ def _stream_follows(access_token: str, pipeline_uuid: str) -> List[dict]:
     return all_records
 
 
+def _fetch_ratings(
+    access_token: str,
+    manga_ids: List[str],
+    pipeline_uuid: str,
+) -> Dict[str, Tuple[int, Optional[datetime]]]:
+    """
+    Fetch the user's personal ratings for the given manga IDs.
+
+    Batches requests to stay under the API's per-request limit.
+
+    Returns:
+        Dict mapping mangadex_id → (rating, rated_at). Only rated manga appear.
+    """
+    auth_headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
+    ratings: Dict[str, Tuple[int, Optional[datetime]]] = {}
+
+    for i in range(0, len(manga_ids), _RATINGS_BATCH):
+        batch = manga_ids[i : i + _RATINGS_BATCH]
+        params = urlencode([("manga[]", mid) for mid in batch], quote_via=quote)
+        body = make_api_request(
+            method="GET",
+            url=f"{_RATINGS_URL}?{params}",
+            headers=auth_headers,
+            timeout=30,
+        ).json()
+
+        raw_ratings = body.get("ratings", {})
+        if not isinstance(raw_ratings, dict):
+            raw_ratings = {}
+        for manga_id, data in raw_ratings.items():
+            raw_ts = data.get("createdAt")
+            rated_at = datetime.fromisoformat(raw_ts) if raw_ts else None
+            ratings[manga_id] = (data["rating"], rated_at)
+
+        print(f"[{pipeline_uuid}] Ratings batch {i // _RATINGS_BATCH + 1}: {len(body.get('ratings', {}))} rated.")
+        time.sleep(_SLEEP_BETWEEN_PAGES)
+
+    return ratings
+
+
 def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     """
-    Authenticate and return all followed manga as a DataFrame.
+    Authenticate and return all followed manga as a DataFrame, including the
+    user's personal rating for each title where one exists.
 
     This is the function Mage blocks should call directly.
 
     Returns:
-        pd.DataFrame: Columns: mangadex_id, title.
+        pd.DataFrame: Columns: mangadex_id, title, rating (nullable INT), rated_at (nullable TIMESTAMPTZ).
     """
     print(f"[{pipeline_uuid}] Authenticating with MangaDex...")
     access_token = get_access_token()
     print(f"[{pipeline_uuid}] Authenticated. Fetching follows...")
 
     records = _stream_follows(access_token, pipeline_uuid)
+    manga_ids = [r["id"] for r in records]
 
-    rows = [
-        {
-            "mangadex_id": record["id"],
+    print(f"[{pipeline_uuid}] Fetching personal ratings for {len(manga_ids)} followed manga...")
+    ratings = _fetch_ratings(access_token, manga_ids, pipeline_uuid)
+
+    rows = []
+    for record in records:
+        mid = record["id"]
+        rating_val, rated_at = ratings.get(mid, (None, None))
+        rows.append({
+            "mangadex_id": mid,
             "title": _extract_title(record),
-        }
-        for record in records
-    ]
+            "rating": rating_val,
+            "rated_at": rated_at,
+        })
 
-    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["mangadex_id", "title"])
+    if not rows:
+        return pd.DataFrame(columns=["mangadex_id", "title", "rating", "rated_at"])
+
+    df = pd.DataFrame(rows)
+    df["rated_at"] = pd.to_datetime(df["rated_at"], utc=True)
+    rated_count = df["rating"].notna().sum()
     preview = [r["title"] for r in rows[:5]]
     suffix = "..." if len(rows) > 5 else ""
-    print(f"[{pipeline_uuid}] Done. {len(df)} manga followed: {preview}{suffix}")
+    print(f"[{pipeline_uuid}] Done. {len(df)} manga followed, {rated_count} rated: {preview}{suffix}")
     return df

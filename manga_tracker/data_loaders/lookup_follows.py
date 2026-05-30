@@ -27,4 +27,4 @@ def lookup_follows(**kwargs) -> pd.DataFrame:
 @test
 def test_output(output, *args) -> None:
     assert isinstance(output, pd.DataFrame)
-    assert {"mangadex_id", "title"}.issubset(output.columns)
+    assert {"mangadex_id", "title", "rating", "rated_at"}.issubset(output.columns)
