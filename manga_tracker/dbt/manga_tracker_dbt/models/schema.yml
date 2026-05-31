@@ -66,7 +66,8 @@ models:
         tests:
           - not_null
           - accepted_values:
-              values: ['mangadex']
+              arguments:
+                values: ['mangadex']
       - name: title
         tests:
           - not_null:
@@ -75,13 +76,15 @@ models:
       - name: status
         tests:
           - accepted_values:
-              values: ['ongoing', 'completed', 'hiatus', 'cancelled']
+              arguments:
+                values: ['ongoing', 'completed', 'hiatus', 'cancelled']
               config:
                 severity: warn        # warn not error — upstream data may have nulls
       - name: content_rating
         tests:
           - accepted_values:
-              values: ['safe', 'suggestive', 'erotica', 'pornographic']
+              arguments:
+                values: ['safe', 'suggestive', 'erotica', 'pornographic']
               config:
                 severity: warn
       - name: original_language

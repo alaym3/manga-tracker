@@ -35,7 +35,7 @@ models:
       +schema: staging
       stg_manga:
         +materialized: incremental
-        post-hook:
+        +post-hook:
           - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Cleaned and normalized manga records transformed from raw.manga_responses. One row per manga title.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID, sourced from data[].id. Used to join back to raw.manga_responses.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.source IS 'API source for this record. Defaults to mangadex, allows future multi-source ingestion.';"
@@ -56,7 +56,7 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
       stg_chapters:
         +materialized: incremental
-        post-hook:
+        +post-hook:
           - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Cleaned and normalized chapter records transformed from raw.chapter_responses. One row per unique chapter release.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID for the chapter, sourced from data[].id.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.manga_mangadex_id IS 'MangaDex UUID of the parent manga, extracted from relationships[] where type=manga.';"
@@ -75,7 +75,7 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
       stg_manga_statistics:
         +materialized: incremental
-        post-hook:
+        +post-hook:
           - "COMMENT ON TABLE {{ this.schema }}.{{ this.table }} IS 'Community statistics per manga from MangaDex GET /statistics/manga. One row per manga, merged on each pipeline run.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.mangadex_id IS 'MangaDex UUID matching staging.stg_manga.mangadex_id.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.rating_average IS 'Mean of all user ratings (1–10).';"
