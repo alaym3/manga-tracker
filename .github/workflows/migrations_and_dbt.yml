@@ -97,5 +97,5 @@ jobs:
           POSTGRES_PASSWORD: postgres
         run: |
           dbt deps
-          dbt run --select staging+ --empty --profiles-dir .
+          dbt run --select staging+ --profiles-dir .
           dbt test --select staging+ --profiles-dir .
