@@ -911,10 +911,10 @@ Two separate jobs:
 
 | Job | What it does |
 |---|---|
-| `flyway migrations` | Spins up a fresh `postgres:16` container and runs all Flyway migrations against it. Catches SQL syntax errors, missing `IF NOT EXISTS` guards, and ordering bugs before they reach production. |
-| `dbt compile` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt deps && dbt compile`. Catches Jinja template errors and invalid SQL in all models without executing any queries. |
+| `flyway migrations` | Spins up a fresh `postgres:17` container, runs all Flyway migrations, then runs `flyway validate` to verify that no applied migration file has been edited after the fact (checksum check). |
+| `dbt run & test` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt run --empty` to execute all staging models against the real schema (catches missing columns, bad joins, and SQL errors that `compile` alone misses), followed by `dbt test` to run all schema tests. |
 
-The dbt job only runs if Flyway passes — no point validating models against a broken schema.
+The dbt job only runs if Flyway passes — no point running models against a broken schema.
 
 ---
 
