@@ -31,7 +31,11 @@ def send_manga_notifications(
     pipeline_uuid: str,
 ) -> None:
     # Build the Postgres array literal once outside the closure
-    tags_array = "ARRAY[" + ", ".join(f"'{t.replace(chr(39), chr(39) * 2)}'" for t in notification_tags) + "]::text[]"
+    tags_array = (
+        "ARRAY["
+        + ", ".join(f"'{t.replace(chr(39), chr(39) * 2)}'" for t in notification_tags)
+        + "]::text[]"
+    )
     tag_set = set(notification_tags)
 
     def _notify(watermark: datetime) -> None:

@@ -56,8 +56,9 @@ async def list_manga(
     ).scalar()
 
     rows = (
-        await db.execute(
-            text(f"""
+        (
+            await db.execute(
+                text(f"""
                 SELECT mangadex_id, source, title, status, year, content_rating,
                        original_language, tags, authors, cover_url
                 FROM staging.stg_manga
@@ -65,9 +66,12 @@ async def list_manga(
                 ORDER BY title ASC
                 LIMIT :limit OFFSET :offset
             """),
-            params,
+                params,
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     result = PaginatedManga(total=total, limit=limit, offset=offset, data=rows)
     await set_cached(redis, cache_key, result.model_dump(), MANGA_LIST_TTL)
@@ -85,11 +89,15 @@ async def get_manga(
         return cached
 
     row = (
-        await db.execute(
-            text("SELECT * FROM staging.stg_manga WHERE mangadex_id = :id"),
-            {"id": mangadex_id},
+        (
+            await db.execute(
+                text("SELECT * FROM staging.stg_manga WHERE mangadex_id = :id"),
+                {"id": mangadex_id},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
 
     if not row:
         raise HTTPException(status_code=404, detail="Manga not found")
@@ -121,8 +129,9 @@ async def get_manga_chapters(
     ).scalar()
 
     rows = (
-        await db.execute(
-            text("""
+        (
+            await db.execute(
+                text("""
                 SELECT mangadex_id, manga_mangadex_id, volume, chapter_number, title,
                        language, is_unavailable, pages, scanlation_group,
                        published_at, readable_at, external_url
@@ -131,9 +140,12 @@ async def get_manga_chapters(
                 ORDER BY published_at ASC NULLS LAST
                 LIMIT :limit OFFSET :offset
             """),
-            params,
+                params,
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     result = PaginatedChapters(total=total, limit=limit, offset=offset, data=rows)
     await set_cached(redis, cache_key, result.model_dump(), CHAPTERS_TTL)

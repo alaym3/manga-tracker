@@ -30,7 +30,6 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
-
 # ---------------------------------------------------------------------------
 # Constants — tweak here to change retry behavior across all pipelines making raw HTTP requests
 # ---------------------------------------------------------------------------
@@ -98,9 +97,11 @@ class _RetryableAPIError(Exception):
 #      and state each time. At module level it is defined and decorated once.
 # ---------------------------------------------------------------------------
 
+
 def _is_html_response(response: requests.Response) -> bool:
     content_type = response.headers.get("Content-Type", "")
     return "text/html" in content_type or response.text.lstrip().startswith("<!doctype")
+
 
 @retry(
     # Only retry on our internal signal — not on every exception type.
@@ -135,10 +136,7 @@ def _execute_with_retry(
     """
     attempt_number = _execute_with_retry.retry.statistics.get("attempt_number", 1)
     if attempt_number > 1:
-        print(
-            f"[api_request] Retry attempt {attempt_number}/{_MAX_ATTEMPTS} "
-            f"— {method} {url}"
-        )
+        print(f"[api_request] Retry attempt {attempt_number}/{_MAX_ATTEMPTS} — {method} {url}")
 
     try:
         response = requests.request(
@@ -160,8 +158,7 @@ def _execute_with_retry(
         # 429: rate limited — back off and retry.
         # 5xx: server-side error — transient and worth retrying.
         print(
-            f"[api_request] Retryable HTTP {response.status_code} on {method} {url} "
-            f"— will retry."
+            f"[api_request] Retryable HTTP {response.status_code} on {method} {url} — will retry."
         )
         raise _RetryableAPIError(f"HTTP {response.status_code} from {url}")
 
@@ -177,8 +174,7 @@ def _execute_with_retry(
         # Non-retryable 4xx (e.g. 400, 401, 403, 404) — these are caller errors.
         # Retrying won't fix them, so raise immediately to avoid wasting attempts.
         raise APIRequestError(
-            f"Non-retryable HTTP {response.status_code} on {method} {url}: "
-            f"{response.text[:300]}",
+            f"Non-retryable HTTP {response.status_code} on {method} {url}: {response.text[:300]}",
             status_code=response.status_code,
             response_text=response.text,
         )
@@ -236,9 +232,7 @@ def make_api_request(
     """
     method = method.upper()
     if method not in {"GET", "POST", "PATCH"}:
-        raise ValueError(
-            f"Unsupported HTTP method: '{method}'. Must be one of: GET, POST, PATCH."
-        )
+        raise ValueError(f"Unsupported HTTP method: '{method}'. Must be one of: GET, POST, PATCH.")
 
     try:
         return _execute_with_retry(
@@ -255,8 +249,7 @@ def make_api_request(
         # actual underlying cause, then raise as a clean APIRequestError.
         cause = e.last_attempt.exception()
         raise APIRequestError(
-            f"{method} {url} failed after {_MAX_ATTEMPTS} attempts. "
-            f"Last error: {cause}",
+            f"{method} {url} failed after {_MAX_ATTEMPTS} attempts. Last error: {cause}",
         ) from e
     except APIRequestError:
         # Non-retryable error raised directly inside _execute_with_retry —

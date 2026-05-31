@@ -13,9 +13,9 @@ Retry logic per page request is handled by the shared utility:
 """
 
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Generator, Iterator, List, Optional, Tuple
-from urllib.parse import urlencode, quote
+from urllib.parse import quote, urlencode
 
 import pandas as pd
 
@@ -28,9 +28,9 @@ from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_re
 _MANGADEX_MANGA_URL = "https://api.mangadex.org/manga"
 _PAGE_LIMIT = 100
 _REQUEST_TIMEOUT_SECONDS = 30
-_CHUNK_MONTHS = 2                                           # safe under 10k Elasticsearch limit
+_CHUNK_MONTHS = 2  # safe under 10k Elasticsearch limit
 _MANGADEX_EPOCH = datetime(2018, 1, 1, tzinfo=timezone.utc)
-_SLEEP_BETWEEN_PAGES = 1.5                                  # seconds — prevents CDN throttling
+_SLEEP_BETWEEN_PAGES = 1.5  # seconds — prevents CDN throttling
 DEFAULT_INCLUDES = ["author", "artist", "cover_art", "tags"]
 DEFAULT_HEADERS = {
     "Accept": "application/json",
@@ -41,6 +41,7 @@ DEFAULT_HEADERS = {
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _generate_date_chunks(
     start: datetime,
@@ -80,6 +81,7 @@ def _build_params(
         parts.append(("includes[]", include))
     return urlencode(parts, quote_via=quote)
 
+
 # unsure about if we need this here - it was required for chapters.
 # def _build_params(
 #     offset: int,
@@ -97,6 +99,7 @@ def _build_params(
 #     for include in includes:
 #         parts.append(("includes[]", include))
 #     return urlencode(parts, quote_via=lambda s, safe, encoding, errors: quote(s, safe="[]/:"))
+
 
 def _parse_page(response_json: dict, offset: int) -> list:
     """
@@ -131,6 +134,7 @@ def _parse_created_at(record: dict) -> Optional[datetime]:
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
+
 
 def stream_raw_manga_by_chunk(
     pipeline_uuid: str,
@@ -229,10 +233,7 @@ def stream_raw_manga_by_chunk(
                 total = response_json["total"]
 
             if not records:
-                print(
-                    f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: "
-                    f"no more records."
-                )
+                print(f"[{pipeline_uuid}] Chunk {chunk_index}/{len(chunks)}: no more records.")
                 break
 
             chunk_exhausted = False
@@ -274,9 +275,7 @@ def stream_raw_manga_by_chunk(
         yield chunk_end, chunk_records
 
         if max_records is not None and total_records >= max_records:
-            print(
-                f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early."
-            )
+            print(f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early.")
             return
 
     print(f"[{pipeline_uuid}] Done. Total manga retrieved: {total_records}.")

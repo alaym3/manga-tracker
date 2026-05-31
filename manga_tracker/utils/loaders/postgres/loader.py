@@ -21,10 +21,10 @@ from mage_ai.io.config import ConfigFileLoader
 from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _execute_query(
     query: str,
@@ -53,15 +53,10 @@ def _execute_query(
     config_path = path.join(get_repo_path(), "io_config.yaml")
 
     try:
-        with Postgres.with_config(
-            ConfigFileLoader(config_path, config_profile)
-        ) as loader:
+        with Postgres.with_config(ConfigFileLoader(config_path, config_profile)) as loader:
             df = loader.load(query)
     except Exception as e:
-        print(
-            f"[{pipeline_uuid}] Query failed "
-            f"(profile='{config_profile}'): {e}"
-        )
+        print(f"[{pipeline_uuid}] Query failed (profile='{config_profile}'): {e}")
         raise
 
     print(
@@ -97,6 +92,7 @@ def _read_sql_file(sql_path: str, pipeline_uuid: str) -> str:
 # ---------------------------------------------------------------------------
 # Public interface
 # ---------------------------------------------------------------------------
+
 
 def load_from_postgres(
     sql_path: str,
@@ -160,10 +156,7 @@ def load_from_postgres_with_custom_params(
         FileNotFoundError: If the SQL file is not found.
         Exception: If the query fails.
     """
-    print(
-        f"[{pipeline_uuid}] Starting Postgres load with custom params "
-        f"— {query_params}."
-    )
+    print(f"[{pipeline_uuid}] Starting Postgres load with custom params — {query_params}.")
 
     query = _read_sql_file(sql_path, pipeline_uuid)
     query = query.format(**query_params)

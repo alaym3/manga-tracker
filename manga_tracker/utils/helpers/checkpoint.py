@@ -31,9 +31,7 @@ def read_checkpoint(
     their epoch default rather than crashing.
     """
     try:
-        with Postgres.with_config(
-            ConfigFileLoader(_config_path(), config_profile)
-        ) as pg:
+        with Postgres.with_config(ConfigFileLoader(_config_path(), config_profile)) as pg:
             df = pg.load(
                 f"SELECT last_pulled_at FROM mage.pipeline_checkpoints "
                 f"WHERE pipeline_name = '{pipeline_name}'"
@@ -58,16 +56,18 @@ def save_checkpoint(
     pipeline_uuid: str,
 ) -> None:
     """Upsert ts as the current checkpoint for pipeline_name."""
-    df = pd.DataFrame([{
-        "pipeline_name": pipeline_name,
-        "last_pulled_at": ts,
-        "updated_at": datetime.now(timezone.utc),
-    }])
+    df = pd.DataFrame(
+        [
+            {
+                "pipeline_name": pipeline_name,
+                "last_pulled_at": ts,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        ]
+    )
     df["last_pulled_at"] = pd.to_datetime(df["last_pulled_at"], utc=True)
     df["updated_at"] = pd.to_datetime(df["updated_at"], utc=True)
-    with Postgres.with_config(
-        ConfigFileLoader(_config_path(), config_profile)
-    ) as pg:
+    with Postgres.with_config(ConfigFileLoader(_config_path(), config_profile)) as pg:
         pg.export(
             df,
             "mage",

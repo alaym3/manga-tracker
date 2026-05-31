@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.10
+    hooks:
+      # Format first, then lint — order matters
+      - id: ruff-format
+        name: ruff format
+        types_or: [python]
+      - id: ruff
+        name: ruff lint
+        args: [--fix]
+        types_or: [python]

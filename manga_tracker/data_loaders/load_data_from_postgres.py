@@ -1,4 +1,5 @@
 import pandas as pd
+
 from manga_tracker.utils.helpers.postgres.loader import (
     load_from_postgres,
 )

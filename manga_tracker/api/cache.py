@@ -8,10 +8,10 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
 
 # TTLs in seconds — chosen based on how often each data type changes.
 # Pipeline runs at most hourly, so caching beyond that window is safe.
-MANGA_DETAIL_TTL = 86_400   # 24h — manga metadata almost never changes
-MANGA_LIST_TTL = 3_600      # 1h  — list results shift only when pipeline runs
-CHAPTERS_TTL = 3_600        # 1h
-RECENT_CHAPTERS_TTL = 600   # 10m — most likely to have fresh uploads
+MANGA_DETAIL_TTL = 86_400  # 24h — manga metadata almost never changes
+MANGA_LIST_TTL = 3_600  # 1h  — list results shift only when pipeline runs
+CHAPTERS_TTL = 3_600  # 1h
+RECENT_CHAPTERS_TTL = 600  # 10m — most likely to have fresh uploads
 
 
 async def get_redis() -> Redis:

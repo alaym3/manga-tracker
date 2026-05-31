@@ -14,13 +14,13 @@ Retry logic per page request is handled by the shared utility:
 
 import time
 from collections import deque
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Deque, Dict, Generator, Iterator, List, Optional, Tuple
-from urllib.parse import urlencode, quote
+from urllib.parse import quote, urlencode
 
 import pandas as pd
 
-from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_request
+from manga_tracker.utils.helpers.api_request import make_api_request
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -29,10 +29,12 @@ from manga_tracker.utils.helpers.api_request import APIRequestError, make_api_re
 _MANGADEX_CHAPTER_URL = "https://api.mangadex.org/chapter"
 _PAGE_LIMIT = 100
 _REQUEST_TIMEOUT_SECONDS = 30
-_CHUNK_DAYS = 7  # chunk by week; will split dynamically if a time window still hits the offset limit
+_CHUNK_DAYS = (
+    7  # chunk by week; will split dynamically if a time window still hits the offset limit
+)
 _MIN_CHUNK_HOURS = 1
 _MANGADEX_EPOCH = datetime(2018, 1, 1, tzinfo=timezone.utc)
-_SLEEP_BETWEEN_PAGES = 1.5                                  # seconds — prevents CDN throttling
+_SLEEP_BETWEEN_PAGES = 1.5  # seconds — prevents CDN throttling
 DEFAULT_INCLUDES = ["scanlation_group"]
 DEFAULT_HEADERS = {
     "Accept": "application/json",
@@ -43,6 +45,7 @@ DEFAULT_HEADERS = {
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _generate_date_chunks(
     start: datetime,
@@ -76,9 +79,7 @@ def _split_chunk_range(
     """Split a time chunk into two smaller windows."""
     span = chunk_end - chunk_start
     if span <= timedelta(hours=_MIN_CHUNK_HOURS):
-        raise ChunkTooLargeError(
-            f"Chunk too small to split further: {chunk_start} to {chunk_end}."
-        )
+        raise ChunkTooLargeError(f"Chunk too small to split further: {chunk_start} to {chunk_end}.")
     midpoint = chunk_start + timedelta(seconds=span.total_seconds() / 2)
     return [(chunk_start, midpoint), (midpoint, chunk_end)]
 
@@ -107,7 +108,7 @@ def _collect_chunk_records(
             includes=includes,
             since=chunk_start,
         )
-        page_number = (offset // limit) + 1
+        (offset // limit) + 1
 
         response = make_api_request(
             method="GET",
@@ -202,6 +203,7 @@ def _parse_created_at(record: dict) -> Optional[datetime]:
 # Loader
 # ---------------------------------------------------------------------------
 
+
 def stream_raw_chapters_by_chunk(
     pipeline_uuid: str,
     since: Optional[datetime] = None,
@@ -252,13 +254,9 @@ def stream_raw_chapters_by_chunk(
     while chunks:
         chunk_start, chunk_end = chunks.popleft()
         chunk_index += 1
-        print(
-            f"[{pipeline_uuid}] Chunk {chunk_index}: {chunk_start.date()} to {chunk_end.date()}."
-        )
+        print(f"[{pipeline_uuid}] Chunk {chunk_index}: {chunk_start.date()} to {chunk_end.date()}.")
 
-        max_records_remaining = (
-            None if max_records is None else max_records - total_records
-        )
+        max_records_remaining = None if max_records is None else max_records - total_records
 
         try:
             chunk_records = _collect_chunk_records(
@@ -296,9 +294,7 @@ def stream_raw_chapters_by_chunk(
         yield chunk_end, chunk_records
 
         if max_records is not None and total_records >= max_records:
-            print(
-                f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early."
-            )
+            print(f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early.")
             return
 
     print(f"[{pipeline_uuid}] Done. Total chapters retrieved: {total_records}.")

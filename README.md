@@ -867,10 +867,51 @@ published_at, readable_at, external_url
 
 ---
 
+## Development
+
+### Linting
+
+The project uses [ruff](https://docs.astral.sh/ruff/) for formatting and linting. Configuration lives in `pyproject.toml`.
+
+```bash
+# Check for violations
+ruff check .
+
+# Auto-fix all fixable violations
+ruff check --fix .
+
+# Format
+ruff format .
+```
+
+Rules enabled: `E`/`W` (pycodestyle), `F` (pyflakes — undefined names, unused imports), `I` (isort). Line length is 100. The `manga_tracker/dbt/` directory is excluded.
+
+### Pre-commit hooks
+
+Ruff runs automatically before every commit via pre-commit. To set it up locally:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After that, every `git commit` automatically formats and lints the staged files. If ruff makes changes, the commit is aborted — stage the fixes and commit again.
+
+### CI
+
+The `Lint` GitHub Actions workflow (`.github/workflows/lint.yml`) runs on every PR and push to `main`. It runs `ruff format --check` and `ruff check` without `--fix` — if violations exist, the workflow fails and the author must fix them locally before merging.
+
+---
+
 ## Project structure
 
 ```
 manga-tracker/
+├── .github/
+│   └── workflows/
+│       └── lint.yml               # Ruff lint + format check on every PR
+├── .pre-commit-config.yaml        # Ruff pre-commit hooks
+├── pyproject.toml                 # Ruff configuration
 ├── docker-compose.yml
 ├── mage.Dockerfile
 ├── api.Dockerfile

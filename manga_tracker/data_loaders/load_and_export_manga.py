@@ -14,11 +14,11 @@ Pipeline variables (metadata.yaml):
     max_records:                optional int to cap records (dev/testing)
 """
 
-import pandas as pd
 from datetime import datetime, timezone
 from os import path
 from typing import List
 
+import pandas as pd
 from mage_ai.io.config import ConfigFileLoader
 from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
@@ -47,9 +47,7 @@ def _export_chunk(rows: List[dict], config_profile: str, pipeline_uuid: str) -> 
     df = pd.DataFrame(rows)
     df["pulled_at"] = pd.to_datetime(df["pulled_at"], utc=True)
     df = df.drop_duplicates(subset=["mangadex_id"], keep="last")
-    with Postgres.with_config(
-        ConfigFileLoader(_get_config_path(), config_profile)
-    ) as pg:
+    with Postgres.with_config(ConfigFileLoader(_get_config_path(), config_profile)) as pg:
         pg.export(
             df,
             "raw",

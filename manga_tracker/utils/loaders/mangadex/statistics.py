@@ -21,10 +21,10 @@ write each batch to Postgres immediately and keep memory usage flat.
 """
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from os import path
 from typing import Generator, List, Tuple
-from urllib.parse import urlencode, quote
+from urllib.parse import quote, urlencode
 
 import pandas as pd
 from mage_ai.io.config import ConfigFileLoader
@@ -82,7 +82,9 @@ def stream_statistics_batches(
     """
     manga_ids = _load_manga_ids(config_profile)
     total_batches = max(1, (len(manga_ids) + _BATCH_SIZE - 1) // _BATCH_SIZE)
-    print(f"[{pipeline_uuid}] Fetching statistics for {len(manga_ids)} manga in {total_batches} batches...")
+    print(
+        f"[{pipeline_uuid}] Fetching statistics for {len(manga_ids)} manga in {total_batches} batches..."
+    )
 
     for i in range(0, len(manga_ids), _BATCH_SIZE):
         batch = manga_ids[i : i + _BATCH_SIZE]
@@ -93,7 +95,11 @@ def stream_statistics_batches(
             {"mangadex_id": manga_id, "payload": stat_payload, "pulled_at": pulled_at}
             for manga_id, stat_payload in stats.items()
         ]
-        df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["mangadex_id", "payload", "pulled_at"])
+        df = (
+            pd.DataFrame(rows)
+            if rows
+            else pd.DataFrame(columns=["mangadex_id", "payload", "pulled_at"])
+        )
         if not df.empty:
             df["pulled_at"] = pd.to_datetime(df["pulled_at"], utc=True)
 
