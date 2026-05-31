@@ -1,0 +1,101 @@
+name: Migrations & dbt
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  flyway:
+    name: flyway migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: manga_tracker
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Flyway migrations
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/manga_tracker/utils/migrations:/flyway/sql" \
+            flyway/flyway:10 \
+            -url="jdbc:postgresql://127.0.0.1:5432/manga_tracker" \
+            -user=postgres \
+            -password=postgres \
+            migrate
+
+      - name: Validate Flyway checksums
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/manga_tracker/utils/migrations:/flyway/sql" \
+            flyway/flyway:10 \
+            -url="jdbc:postgresql://127.0.0.1:5432/manga_tracker" \
+            -user=postgres \
+            -password=postgres \
+            validate
+
+  dbt:
+    name: dbt run & test
+    needs: flyway
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: manga_tracker
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Flyway migrations
+        run: |
+          docker run --rm --network host \
+            -v "${{ github.workspace }}/manga_tracker/utils/migrations:/flyway/sql" \
+            flyway/flyway:10 \
+            -url="jdbc:postgresql://127.0.0.1:5432/manga_tracker" \
+            -user=postgres \
+            -password=postgres \
+            migrate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dbt-postgres
+        run: pip install dbt-postgres~=1.8.0
+
+      - name: dbt run & test
+        working-directory: manga_tracker/dbt/manga_tracker_dbt
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_DBNAME: manga_tracker
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        run: |
+          dbt deps
+          dbt run --select staging+ --profiles-dir .
+          dbt test --select staging+ --profiles-dir .
