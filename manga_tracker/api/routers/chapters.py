@@ -31,8 +31,9 @@ async def recent_chapters(
     ).scalar()
 
     rows = (
-        await db.execute(
-            text("""
+        (
+            await db.execute(
+                text("""
                 SELECT mangadex_id, manga_mangadex_id, volume, chapter_number, title,
                        language, is_unavailable, pages, scanlation_group,
                        published_at, readable_at, external_url
@@ -41,9 +42,12 @@ async def recent_chapters(
                 ORDER BY published_at DESC
                 LIMIT :limit OFFSET :offset
             """),
-            params,
+                params,
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     result = PaginatedChapters(total=total, limit=limit, offset=offset, data=rows)
     await set_cached(redis, cache_key, result.model_dump(), RECENT_CHAPTERS_TTL)

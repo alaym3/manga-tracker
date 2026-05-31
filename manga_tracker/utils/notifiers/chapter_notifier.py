@@ -15,7 +15,7 @@ from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
 from manga_tracker.utils.notifiers.base import run_with_watermark
-from manga_tracker.utils.notifiers.discord import send_embed, send_notification
+from manga_tracker.utils.notifiers.discord import send_embed
 
 _CHECKPOINT_KEY = "notify_new_chapters"
 
@@ -66,8 +66,11 @@ def send_chapter_notifications(
                 lines.append(f"[{ch}]({chapter_url})")
 
             # For a single chapter, link the title directly to the reader
-            title_url = f"https://mangadex.org/chapter/{group['chapter_id'].iloc[0]}" \
-                if len(lines) == 1 else manga_url
+            title_url = (
+                f"https://mangadex.org/chapter/{group['chapter_id'].iloc[0]}"
+                if len(lines) == 1
+                else manga_url
+            )
 
             label = "chapter" if len(lines) == 1 else "chapters"
             send_embed(

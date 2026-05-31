@@ -14,19 +14,19 @@ Pipeline variables (metadata.yaml):
     max_records:                optional int to cap records (dev/testing)
 """
 
-import pandas as pd
 from datetime import datetime, timezone
 from os import path
 from typing import List
 
+import pandas as pd
 from mage_ai.io.config import ConfigFileLoader
 from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
 from manga_tracker.utils.helpers.checkpoint import read_checkpoint, save_checkpoint
 from manga_tracker.utils.loaders.mangadex.chapters import (
-    stream_raw_chapters_by_chunk,
     _extract_manga_id,
+    stream_raw_chapters_by_chunk,
 )
 
 if "data_loader" not in globals():
@@ -50,9 +50,7 @@ def _export_chunk(rows: List[dict], config_profile: str, pipeline_uuid: str) -> 
     df = pd.DataFrame(rows)
     df["pulled_at"] = pd.to_datetime(df["pulled_at"], utc=True)
     df = df.drop_duplicates(subset=["mangadex_id"], keep="last")
-    with Postgres.with_config(
-        ConfigFileLoader(_get_config_path(), config_profile)
-    ) as pg:
+    with Postgres.with_config(ConfigFileLoader(_get_config_path(), config_profile)) as pg:
         pg.export(
             df,
             "raw",

@@ -16,7 +16,6 @@ from mage_ai.io.config import ConfigFileLoader
 from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -99,10 +98,7 @@ def export_data_to_postgres(
         f"[{pipeline_uuid}] - exists policy = {if_exists_policy}, execution type = {execution_type}"
     )
     if if_exists_policy is None:
-        print(
-            f"[{pipeline_uuid}] Export failed — unrecognized execution_type "
-            f"'{execution_type}'."
-        )
+        print(f"[{pipeline_uuid}] Export failed — unrecognized execution_type '{execution_type}'.")
         raise ValueError(
             f"Unrecognized execution_type '{execution_type}'. "
             f"Must be one of: {list(_EXECUTION_TYPE_TO_POLICY.keys())}."
@@ -111,9 +107,7 @@ def export_data_to_postgres(
     config_path = path.join(get_repo_path(), "io_config.yaml")
 
     try:
-        with Postgres.with_config(
-            ConfigFileLoader(config_path, exporter_config_profile)
-        ) as loader:
+        with Postgres.with_config(ConfigFileLoader(config_path, exporter_config_profile)) as loader:
             loader.export(
                 df,
                 exporter_schema_name,
@@ -129,8 +123,7 @@ def export_data_to_postgres(
             )
     except Exception as e:
         print(
-            f"[{pipeline_uuid}] Export failed for "
-            f"{exporter_schema_name}.{exporter_table_name}: {e}"
+            f"[{pipeline_uuid}] Export failed for {exporter_schema_name}.{exporter_table_name}: {e}"
         )
         raise
 

@@ -9,7 +9,6 @@ Required pipeline variables (metadata.yaml):
     checkpoint_pipeline_name:   e.g. 'load_manga'
 """
 
-import pandas as pd
 from manga_tracker.utils.helpers.postgres.loader import (
     load_from_postgres_with_custom_params,
 )

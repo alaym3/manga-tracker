@@ -20,9 +20,9 @@ Required env vars:
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlencode, quote
+from urllib.parse import quote, urlencode
 
 import pandas as pd
 import requests
@@ -61,9 +61,7 @@ def get_access_token() -> str:
 def _extract_title(record: dict) -> str:
     title_obj = record.get("attributes", {}).get("title", {})
     return (
-        title_obj.get("en")
-        or title_obj.get("ja-ro")
-        or next(iter(title_obj.values()), "Unknown")
+        title_obj.get("en") or title_obj.get("ja-ro") or next(iter(title_obj.values()), "Unknown")
     )
 
 
@@ -136,7 +134,9 @@ def _fetch_ratings(
             rated_at = datetime.fromisoformat(raw_ts) if raw_ts else None
             ratings[manga_id] = (data["rating"], rated_at)
 
-        print(f"[{pipeline_uuid}] Ratings batch {i // _RATINGS_BATCH + 1}: {len(body.get('ratings', {}))} rated.")
+        print(
+            f"[{pipeline_uuid}] Ratings batch {i // _RATINGS_BATCH + 1}: {len(body.get('ratings', {}))} rated."
+        )
         time.sleep(_SLEEP_BETWEEN_PAGES)
 
     return ratings
@@ -166,12 +166,14 @@ def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     for record in records:
         mid = record["id"]
         rating_val, rated_at = ratings.get(mid, (None, None))
-        rows.append({
-            "mangadex_id": mid,
-            "title": _extract_title(record),
-            "rating": rating_val,
-            "rated_at": rated_at,
-        })
+        rows.append(
+            {
+                "mangadex_id": mid,
+                "title": _extract_title(record),
+                "rating": rating_val,
+                "rated_at": rated_at,
+            }
+        )
 
     if not rows:
         return pd.DataFrame(columns=["mangadex_id", "title", "rating", "rated_at"])
@@ -181,5 +183,7 @@ def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     rated_count = df["rating"].notna().sum()
     preview = [r["title"] for r in rows[:5]]
     suffix = "..." if len(rows) > 5 else ""
-    print(f"[{pipeline_uuid}] Done. {len(df)} manga followed, {rated_count} rated: {preview}{suffix}")
+    print(
+        f"[{pipeline_uuid}] Done. {len(df)} manga followed, {rated_count} rated: {preview}{suffix}"
+    )
     return df
