@@ -616,34 +616,34 @@ Both `load_mangadex_chapters` and `load_mangadex_manga` fire a Discord notificat
 
 The shared watermark pattern (`utils/notifiers/base.py`) works the same in both: on the very first run the watermark is set to now without sending anything, so backfilled history never floods the feed.
 
+Both notifiers use Discord's rich embed format: a clickable title, manga cover art as a thumbnail, and linked text in the description. Embeds are sent via `utils/notifiers/discord.py → send_embed()`.
+
 ### New chapters (followed manga)
 
-`notify_new_chapters` runs after `stg_chapters`. It queries `staging.stg_chapters JOIN raw.user_follows` for rows ingested since the last run and sends one message per manga, grouping multiple chapters together.
+`notify_new_chapters` runs after `stg_chapters`. It queries `staging.stg_chapters JOIN raw.user_follows JOIN staging.stg_manga` for rows ingested since the last run and sends one embed per manga, grouping multiple chapters together.
 
 ```
 load_mangadex_chapters → stg_chapters (dbt) → notify_new_chapters
-  ├─ Query new chapters for followed manga since watermark
-  ├─ POST one Discord message per manga (chapters grouped)
+  ├─ Query new chapters for followed manga since watermark (+ cover_url from stg_manga)
+  ├─ POST one Discord embed per manga (chapters grouped, each chapter a clickable link)
   └─ Advance watermark
 ```
 
 **Required env var:** `DISCORD_CHAPTERS_WEBHOOK_URL`
 
-**Example:**
-```
-New chapter: Berserk
-Ch. 374 — The Dragonslayer Awakens
-Ch. 375
-```
+**Embed format:**
+- **Title** — "New chapter: Berserk" — links directly to the chapter reader (or to the manga page when multiple chapters)
+- **Thumbnail** — manga cover art
+- **Description** — one line per chapter, each a clickable link to `mangadex.org/chapter/{id}`
 
 ### New manga (tag filter)
 
-`notify_new_manga` runs after `stg_manga`. It queries `staging.stg_manga` for rows ingested since the last run whose `tags` overlap with the `notification_tags` pipeline variable, and sends one message per match.
+`notify_new_manga` runs after `stg_manga`. It queries `staging.stg_manga` for rows ingested since the last run whose `tags` overlap with the `notification_tags` pipeline variable, and sends one embed per match.
 
 ```
 load_mangadex_manga → stg_manga (dbt) → notify_new_manga
   ├─ Query new manga matching notification_tags since watermark
-  ├─ POST one Discord message per manga
+  ├─ POST one Discord embed per manga
   └─ Advance watermark
 ```
 
@@ -656,11 +656,28 @@ notification_tags:
   - Fantasy
 ```
 
-**Example:**
+**Embed format:**
+- **Title** — "New manga: Some Title" — links to `mangadex.org/title/{id}`
+- **Thumbnail** — manga cover art
+- **Description** — matching tags · status | year (e.g. `Action · Fantasy | ongoing | 2024`)
+
+### Re-testing notifications without waiting
+
+To re-trigger notifications against already-ingested data (e.g. to test embed formatting), backdate the watermark in Postgres and then run the notification block directly in the Mage UI:
+
+```sql
+-- Re-trigger chapter notifications
+UPDATE mage.pipeline_checkpoints
+SET last_pulled_at = now() - interval '2 hours'
+WHERE pipeline_name = 'notify_new_chapters';
+
+-- Re-trigger manga notifications
+UPDATE mage.pipeline_checkpoints
+SET last_pulled_at = now() - interval '2 hours'
+WHERE pipeline_name = 'notify_new_manga';
 ```
-New manga: Some Title
-Action · Fantasy | ongoing | 2024
-```
+
+Then open the pipeline in the Mage UI, click the notification block, and hit **Run block** — it runs the block in isolation without re-fetching from the API.
 
 ### Setup
 
