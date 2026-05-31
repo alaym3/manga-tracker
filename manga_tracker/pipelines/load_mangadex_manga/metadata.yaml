@@ -21,7 +21,7 @@ blocks:
   upstream_blocks:
   - load_and_export_manga
   uuid: dbt/manga_tracker_dbt/models/staging/stg_manga
-- all_upstream_blocks_executed: true
+- all_upstream_blocks_executed: false
   color: null
   configuration: {}
   downstream_blocks: []
@@ -31,7 +31,7 @@ blocks:
   language: python
   name: notify_new_manga
   retry_config: null
-  status: not_executed
+  status: executed
   timeout: null
   type: custom
   upstream_blocks:
@@ -87,7 +87,7 @@ variables:
   - mangadex_id
   manual_run_from_date: '2020-01-01'
   manual_run_to_date: '2020-01-01'
-  notification_tags: 
+  notification_tags:
   - Horror
   - Girls' Love
   - Boys' Love
