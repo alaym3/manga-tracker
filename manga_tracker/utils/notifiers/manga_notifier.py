@@ -15,7 +15,7 @@ from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
 from manga_tracker.utils.notifiers.base import run_with_watermark
-from manga_tracker.utils.notifiers.discord import send_notification
+from manga_tracker.utils.notifiers.discord import send_embed
 
 _CHECKPOINT_KEY = "notify_new_manga"
 
@@ -42,7 +42,8 @@ def send_manga_notifications(
                     title,
                     tags,
                     status,
-                    year
+                    year,
+                    cover_url
                 FROM staging.stg_manga
                 WHERE ingested_at > '{watermark.isoformat()}'
                   AND tags && {tags_array}
@@ -60,11 +61,15 @@ def send_manga_notifications(
                 row.get("status") or "",
                 str(int(row["year"])) if pd.notna(row.get("year")) else "",
             ]
-            message = " | ".join(p for p in parts if p)
-            send_notification(
+            description = " | ".join(p for p in parts if p)
+            cover_url = row["cover_url"] if pd.notna(row.get("cover_url")) else None
+            manga_url = f"https://mangadex.org/title/{row['mangadex_id']}"
+            send_embed(
                 webhook_url=webhook_url,
                 title=f"New manga: {row['title']}",
-                message=message,
+                title_url=manga_url,
+                description=description,
+                thumbnail_url=cover_url,
             )
             print(f"[{pipeline_uuid}] Notified: {row['title']} ({', '.join(matching)})")
 

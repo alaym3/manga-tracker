@@ -37,7 +37,7 @@ blocks:
   upstream_blocks:
   - load_and_export_chapters
   uuid: dbt/manga_tracker_dbt/models/staging/stg_chapters
-- all_upstream_blocks_executed: true
+- all_upstream_blocks_executed: false
   color: null
   configuration: {}
   downstream_blocks: []
@@ -47,7 +47,7 @@ blocks:
   language: python
   name: notify_new_chapters
   retry_config: null
-  status: not_executed
+  status: executed
   timeout: null
   type: custom
   upstream_blocks:
