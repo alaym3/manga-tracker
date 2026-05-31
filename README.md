@@ -899,7 +899,22 @@ After that, every `git commit` automatically formats and lints the staged files.
 
 ### CI
 
-The `Lint` GitHub Actions workflow (`.github/workflows/lint.yml`) runs on every PR and push to `main`. It runs `ruff format --check` and `ruff check` without `--fix` — if violations exist, the workflow fails and the author must fix them locally before merging.
+Both workflows run on every push to every branch and on every PR.
+
+**`.github/workflows/lint.yml` — `Lint`**
+
+Runs `ruff format --check` and `ruff check` without `--fix`. If violations exist the workflow fails and the author must fix them locally before merging.
+
+**`.github/workflows/migrations_and_dbt.yml` — `Migrations & dbt`**
+
+Two separate jobs:
+
+| Job | What it does |
+|---|---|
+| `flyway migrations` | Spins up a fresh `postgres:16` container and runs all Flyway migrations against it. Catches SQL syntax errors, missing `IF NOT EXISTS` guards, and ordering bugs before they reach production. |
+| `dbt compile` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt deps && dbt compile`. Catches Jinja template errors and invalid SQL in all models without executing any queries. |
+
+The dbt job only runs if Flyway passes — no point validating models against a broken schema.
 
 ---
 
@@ -909,7 +924,8 @@ The `Lint` GitHub Actions workflow (`.github/workflows/lint.yml`) runs on every 
 manga-tracker/
 ├── .github/
 │   └── workflows/
-│       └── lint.yml               # Ruff lint + format check on every PR
+│       ├── lint.yml                    # Ruff lint + format check on every push and PR
+│       └── migrations_and_dbt.yml      # Flyway migrations + dbt compile on every push and PR
 ├── .pre-commit-config.yaml        # Ruff pre-commit hooks
 ├── pyproject.toml                 # Ruff configuration
 ├── docker-compose.yml
