@@ -899,7 +899,7 @@ After that, every `git commit` automatically formats and lints the staged files.
 
 ### CI
 
-Both workflows run on every push to every branch and on every PR.
+Both workflows run on every PR and on every push to `main`.
 
 **`.github/workflows/lint.yml` — `Lint`**
 
@@ -924,8 +924,8 @@ The dbt job only runs if Flyway passes — no point validating models against a 
 manga-tracker/
 ├── .github/
 │   └── workflows/
-│       ├── lint.yml                    # Ruff lint + format check on every push and PR
-│       └── migrations_and_dbt.yml      # Flyway migrations + dbt compile on every push and PR
+│       ├── lint.yml                    # Ruff lint + format check on every PR and push to main
+│       └── migrations_and_dbt.yml      # Flyway migrations + dbt compile on every PR and push to main
 ├── .pre-commit-config.yaml        # Ruff pre-commit hooks
 ├── pyproject.toml                 # Ruff configuration
 ├── docker-compose.yml
