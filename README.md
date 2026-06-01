@@ -905,6 +905,14 @@ Both workflows run on every PR and on every push to `main`.
 
 Runs `ruff format --check` and `ruff check` without `--fix`. If violations exist the workflow fails and the author must fix them locally before merging.
 
+**`.github/workflows/docker_build.yml` — `Docker build`**
+
+Builds both `mage.Dockerfile` and `api.Dockerfile` to catch broken images before they reach deployment.
+
+**`.github/workflows/pip_audit.yml` — `Dependency audit`**
+
+Runs `pip-audit` against `requirements.txt` and `requirements-api.txt` to flag packages with known CVEs.
+
 **`.github/workflows/migrations_and_dbt.yml` — `Migrations & dbt`**
 
 Two separate jobs:
@@ -923,9 +931,12 @@ The dbt job only runs if Flyway passes — no point running models against a bro
 ```
 manga-tracker/
 ├── .github/
+│   ├── dependabot.yml                  # Weekly auto-PRs for pip + GitHub Actions version bumps
 │   └── workflows/
+│       ├── docker_build.yml            # Builds mage + api Docker images on every PR and push to main
 │       ├── lint.yml                    # Ruff lint + format check on every PR and push to main
-│       └── migrations_and_dbt.yml      # Flyway migrations + dbt compile on every PR and push to main
+│       ├── migrations_and_dbt.yml      # Flyway migrations + dbt run & test on every PR and push to main
+│       └── pip_audit.yml               # pip-audit CVE scan on every PR and push to main
 ├── .pre-commit-config.yaml        # Ruff pre-commit hooks
 ├── pyproject.toml                 # Ruff configuration
 ├── docker-compose.yml

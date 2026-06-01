@@ -1,0 +1,20 @@
+name: Docker build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: docker build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mage image
+        run: docker build -f mage.Dockerfile -t manga-tracker-mage .
+
+      - name: Build api image
+        run: docker build -f api.Dockerfile -t manga-tracker-api .

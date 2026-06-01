@@ -1,0 +1,32 @@
+name: Dependency audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pip-audit:
+    name: pip-audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # Mage pins old transitive deps (aiohttp, tornado, werkzeug, etc.) that
+      # we can't safely bump without upgrading Mage itself. Run as informational
+      # only — visible in the PR but does not block merging.
+      - name: Audit requirements.txt (informational)
+        run: pip-audit -r requirements.txt
+        continue-on-error: true
+
+      # API deps are fully owned and pinned by us — this must stay clean.
+      - name: Audit requirements-api.txt
+        run: pip-audit -r requirements-api.txt
