@@ -63,7 +63,13 @@ MangaDex API
 ### Prerequisites
 
 - Docker and Docker Compose
-- A `.env` file in the repo root (see `.env.example` if present)
+- A `.env` file in the repo root — copy `.env.example` and fill in the secrets:
+
+```bash
+cp .env.example .env
+```
+
+The Postgres, Mage, dbt, and Metabase values have working defaults. The only values you must fill in are the MangaDex API credentials (for `load_mangadex_follows`) and the Discord webhook URLs (for notifications).
 
 ### Start everything
 
@@ -899,7 +905,7 @@ After that, every `git commit` automatically formats and lints the staged files.
 
 ### CI
 
-All workflows run on every PR and on every push to `main`. Dependabot keeps dependencies and action versions up to date automatically.
+All workflows run on every PR and on every push to `main`. Each workflow has a concurrency group that cancels in-progress runs for the same branch when a new push arrives, avoiding redundant work. Pip packages are cached so install steps are fast after the first run. Dependabot keeps dependencies and action versions up to date automatically.
 
 **`.github/workflows/lint.yml` — `Lint`**
 
@@ -946,6 +952,7 @@ manga-tracker/
 │       ├── lint.yml                    # Ruff lint + format check on every PR and push to main
 │       ├── migrations_and_dbt.yml      # Flyway migrations + dbt run & test on every PR and push to main
 │       └── pip_audit.yml               # pip-audit CVE scan on every PR and push to main
+├── .env.example                   # Copy to .env and fill in secrets — never commit .env
 ├── .pre-commit-config.yaml        # Ruff pre-commit hooks
 ├── pyproject.toml                 # Ruff configuration
 ├── docker-compose.yml
