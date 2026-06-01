@@ -195,5 +195,10 @@ def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     print(
         f"[{pipeline_uuid}] Done. {len(df)} manga followed, {rated_count} rated: {preview}{suffix}"
     )
-    log.info("load_complete", manga_count=len(df), rated_count=int(rated_count), preview=f"{preview}{suffix}")
+    log.info(
+        "load_complete",
+        manga_count=len(df),
+        rated_count=int(rated_count),
+        preview=f"{preview}{suffix}",
+    )
     return df

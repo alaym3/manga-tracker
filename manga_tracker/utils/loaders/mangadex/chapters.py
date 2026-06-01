@@ -252,14 +252,21 @@ def stream_raw_chapters_by_chunk(
         f"[{pipeline_uuid}] Date range: {since.date()} to {before.date()} "
         f"— {len(chunks)} initial chunks of {_CHUNK_DAYS} days each."
     )
-    log.info("date_range", since=str(since.date()), before=str(before.date()), initial_chunks=len(chunks))
+    log.info(
+        "date_range", since=str(since.date()), before=str(before.date()), initial_chunks=len(chunks)
+    )
 
     chunk_index = 0
     while chunks:
         chunk_start, chunk_end = chunks.popleft()
         chunk_index += 1
         print(f"[{pipeline_uuid}] Chunk {chunk_index}: {chunk_start.date()} to {chunk_end.date()}.")
-        log.info("chunk_started", chunk=chunk_index, chunk_start=str(chunk_start.date()), chunk_end=str(chunk_end.date()))
+        log.info(
+            "chunk_started",
+            chunk=chunk_index,
+            chunk_start=str(chunk_start.date()),
+            chunk_end=str(chunk_end.date()),
+        )
 
         max_records_remaining = None if max_records is None else max_records - total_records
 
@@ -279,7 +286,9 @@ def stream_raw_chapters_by_chunk(
                 f"too large for offset pagination, splitting into "
                 f"{len(smaller_chunks)} smaller chunks."
             )
-            log.warning("chunk_too_large_splitting", chunk=chunk_index, split_count=len(smaller_chunks))
+            log.warning(
+                "chunk_too_large_splitting", chunk=chunk_index, split_count=len(smaller_chunks)
+            )
             for smaller_chunk in reversed(smaller_chunks):
                 chunks.appendleft(smaller_chunk)
             continue
@@ -296,7 +305,13 @@ def stream_raw_chapters_by_chunk(
             f"[{pipeline_uuid}] Chunk {chunk_index}: fetched {len(chunk_records)} records "
             f"from {chunk_start.date()} to {chunk_end.date()}."
         )
-        log.info("chunk_fetched", chunk=chunk_index, records=len(chunk_records), chunk_start=str(chunk_start.date()), chunk_end=str(chunk_end.date()))
+        log.info(
+            "chunk_fetched",
+            chunk=chunk_index,
+            records=len(chunk_records),
+            chunk_start=str(chunk_start.date()),
+            chunk_end=str(chunk_end.date()),
+        )
 
         total_records += len(chunk_records)
         yield chunk_end, chunk_records

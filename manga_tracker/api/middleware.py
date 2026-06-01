@@ -5,8 +5,9 @@ from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from .database import AsyncSessionLocal
 from manga_tracker.utils.logging import get_logger
+
+from .database import AsyncSessionLocal
 
 
 class AuditMiddleware(BaseHTTPMiddleware):
