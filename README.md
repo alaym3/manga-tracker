@@ -899,7 +899,7 @@ After that, every `git commit` automatically formats and lints the staged files.
 
 ### CI
 
-Both workflows run on every PR and on every push to `main`.
+All workflows run on every PR and on every push to `main`. Dependabot keeps dependencies and action versions up to date automatically.
 
 **`.github/workflows/lint.yml` — `Lint`**
 
@@ -911,7 +911,12 @@ Builds both `mage.Dockerfile` and `api.Dockerfile` to catch broken images before
 
 **`.github/workflows/pip_audit.yml` — `Dependency audit`**
 
-Runs `pip-audit` against `requirements.txt` and `requirements-api.txt` to flag packages with known CVEs.
+Runs `pip-audit` against both requirements files with different failure modes:
+
+| File | Behaviour | Reason |
+|---|---|---|
+| `requirements.txt` | Informational — never blocks | Mage pins its own transitive deps (aiohttp, tornado, etc.); bumping them risks breaking Mage. The real fix is upgrading `MAGEAI_VERSION` in `mage.Dockerfile`. |
+| `requirements-api.txt` | Hard failure — blocks merge | All API deps are owned and pinned directly; this must stay clean. |
 
 **`.github/workflows/migrations_and_dbt.yml` — `Migrations & dbt`**
 
@@ -920,9 +925,13 @@ Two separate jobs:
 | Job | What it does |
 |---|---|
 | `flyway migrations` | Spins up a fresh `postgres:17` container, runs all Flyway migrations, then runs `flyway validate` to verify that no applied migration file has been edited after the fact (checksum check). |
-| `dbt run & test` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt run --empty` to execute all staging models against the real schema (catches missing columns, bad joins, and SQL errors that `compile` alone misses), followed by `dbt test` to run all schema tests. |
+| `dbt run & test` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt run --select staging+` to execute all staging models against the real schema (catches missing columns, bad joins, and SQL errors that `compile` alone misses), followed by `dbt test` to run all schema tests. |
 
 The dbt job only runs if Flyway passes — no point running models against a broken schema.
+
+**`.github/dependabot.yml`**
+
+Weekly PRs to bump pip packages (`requirements.txt`, `requirements-api.txt`), Docker base images (`mage.Dockerfile`, `api.Dockerfile`), and GitHub Actions versions across all workflow files.
 
 ---
 
