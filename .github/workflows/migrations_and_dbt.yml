@@ -86,7 +86,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install dbt-postgres
-        run: pip install "dbt-postgres>=1.7.0,<2.0.0.dev0"
+        run: pip install "dbt-postgres>=1.7.0,<2.0.0.dev0" "dbt-core>=1.7.0,<2.0.0.dev0"
 
       - name: dbt run & test
         working-directory: manga_tracker/dbt/manga_tracker_dbt
