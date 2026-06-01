@@ -2,3 +2,4 @@ mage-ai
 pandas
 psycopg2-binary
 requests
+structlog

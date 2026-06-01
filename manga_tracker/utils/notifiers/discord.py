@@ -2,7 +2,10 @@ from typing import Optional
 
 import requests
 
+from manga_tracker.utils.logging import get_logger
+
 _MANGADEX_COLOR = 0xFF6740  # MangaDex brand orange
+_log = get_logger(__name__)
 
 
 def send_notification(webhook_url: str, title: str, message: str) -> None:
@@ -15,6 +18,7 @@ def send_notification(webhook_url: str, title: str, message: str) -> None:
         ).raise_for_status()
     except Exception as e:
         print(f"[discord] Failed to send notification: {e}")
+        _log.warning("notification_failed", error=str(e))
 
 
 def send_embed(
@@ -48,3 +52,4 @@ def send_embed(
         ).raise_for_status()
     except Exception as e:
         print(f"[discord] Failed to send embed: {e}")
+        _log.warning("embed_failed", error=str(e))

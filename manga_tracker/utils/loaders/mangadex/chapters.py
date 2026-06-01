@@ -21,6 +21,7 @@ from urllib.parse import quote, urlencode
 import pandas as pd
 
 from manga_tracker.utils.helpers.api_request import make_api_request
+from manga_tracker.utils.logging import get_logger
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -235,7 +236,9 @@ def stream_raw_chapters_by_chunk(
         APIRequestError: If any paginated request fails after all retry attempts.
         ValueError: If any page response has an unexpected structure.
     """
+    log = get_logger(__name__).bind(pipeline_uuid=pipeline_uuid)
     print(f"[{pipeline_uuid}] Starting MangaDex chapter load.")
+    log.info("chapter_load_started")
 
     since = since or _MANGADEX_EPOCH
     before = datetime.now(timezone.utc)
@@ -249,12 +252,14 @@ def stream_raw_chapters_by_chunk(
         f"[{pipeline_uuid}] Date range: {since.date()} to {before.date()} "
         f"— {len(chunks)} initial chunks of {_CHUNK_DAYS} days each."
     )
+    log.info("date_range", since=str(since.date()), before=str(before.date()), initial_chunks=len(chunks))
 
     chunk_index = 0
     while chunks:
         chunk_start, chunk_end = chunks.popleft()
         chunk_index += 1
         print(f"[{pipeline_uuid}] Chunk {chunk_index}: {chunk_start.date()} to {chunk_end.date()}.")
+        log.info("chunk_started", chunk=chunk_index, chunk_start=str(chunk_start.date()), chunk_end=str(chunk_end.date()))
 
         max_records_remaining = None if max_records is None else max_records - total_records
 
@@ -274,12 +279,14 @@ def stream_raw_chapters_by_chunk(
                 f"too large for offset pagination, splitting into "
                 f"{len(smaller_chunks)} smaller chunks."
             )
+            log.warning("chunk_too_large_splitting", chunk=chunk_index, split_count=len(smaller_chunks))
             for smaller_chunk in reversed(smaller_chunks):
                 chunks.appendleft(smaller_chunk)
             continue
 
         if not chunk_records:
             print(f"[{pipeline_uuid}] Chunk {chunk_index}: no records in range.")
+            log.info("chunk_empty", chunk=chunk_index)
             # Yield the empty chunk so callers can advance their checkpoint past
             # this date range and avoid re-scanning it on restarts.
             yield chunk_end, []
@@ -289,15 +296,18 @@ def stream_raw_chapters_by_chunk(
             f"[{pipeline_uuid}] Chunk {chunk_index}: fetched {len(chunk_records)} records "
             f"from {chunk_start.date()} to {chunk_end.date()}."
         )
+        log.info("chunk_fetched", chunk=chunk_index, records=len(chunk_records), chunk_start=str(chunk_start.date()), chunk_end=str(chunk_end.date()))
 
         total_records += len(chunk_records)
         yield chunk_end, chunk_records
 
         if max_records is not None and total_records >= max_records:
             print(f"[{pipeline_uuid}] Reached max_records={max_records}; stopping early.")
+            log.info("max_records_reached", max_records=max_records, total_records=total_records)
             return
 
     print(f"[{pipeline_uuid}] Done. Total chapters retrieved: {total_records}.")
+    log.info("chapter_load_complete", total_records=total_records)
 
 
 def stream_raw_chapters(

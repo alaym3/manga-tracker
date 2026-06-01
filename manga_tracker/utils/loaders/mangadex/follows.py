@@ -28,6 +28,7 @@ import pandas as pd
 import requests
 
 from manga_tracker.utils.helpers.api_request import make_api_request
+from manga_tracker.utils.logging import get_logger
 
 _AUTH_URL = "https://auth.mangadex.org/realms/mangadex/protocol/openid-connect/token"
 _FOLLOWS_URL = "https://api.mangadex.org/user/follows/manga"
@@ -67,6 +68,7 @@ def _extract_title(record: dict) -> str:
 
 def _stream_follows(access_token: str, pipeline_uuid: str) -> List[dict]:
     """Paginate through /user/follows/manga and return all manga records."""
+    log = get_logger(__name__).bind(pipeline_uuid=pipeline_uuid)
     auth_headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
     all_records = []
     offset = 0
@@ -90,6 +92,7 @@ def _stream_follows(access_token: str, pipeline_uuid: str) -> List[dict]:
         all_records.extend(records)
         total = body.get("total", 0)
         print(f"[{pipeline_uuid}] Fetched {len(all_records)}/{total} follows.")
+        log.info("follows_page_fetched", fetched=len(all_records), total=total)
 
         if len(all_records) >= total:
             break
@@ -113,6 +116,7 @@ def _fetch_ratings(
     Returns:
         Dict mapping mangadex_id → (rating, rated_at). Only rated manga appear.
     """
+    log = get_logger(__name__).bind(pipeline_uuid=pipeline_uuid)
     auth_headers = {**_HEADERS, "Authorization": f"Bearer {access_token}"}
     ratings: Dict[str, Tuple[int, Optional[datetime]]] = {}
 
@@ -134,9 +138,10 @@ def _fetch_ratings(
             rated_at = datetime.fromisoformat(raw_ts) if raw_ts else None
             ratings[manga_id] = (data["rating"], rated_at)
 
-        print(
-            f"[{pipeline_uuid}] Ratings batch {i // _RATINGS_BATCH + 1}: {len(body.get('ratings', {}))} rated."
-        )
+        batch_num = i // _RATINGS_BATCH + 1
+        rated_count = len(body.get("ratings", {}))
+        print(f"[{pipeline_uuid}] Ratings batch {batch_num}: {rated_count} rated.")
+        log.info("ratings_batch_fetched", batch=batch_num, rated=rated_count)
         time.sleep(_SLEEP_BETWEEN_PAGES)
 
     return ratings
@@ -152,14 +157,18 @@ def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Columns: mangadex_id, title, rating (nullable INT), rated_at (nullable TIMESTAMPTZ).
     """
+    log = get_logger(__name__).bind(pipeline_uuid=pipeline_uuid)
     print(f"[{pipeline_uuid}] Authenticating with MangaDex...")
+    log.info("authenticating")
     access_token = get_access_token()
     print(f"[{pipeline_uuid}] Authenticated. Fetching follows...")
+    log.info("authenticated_fetching_follows")
 
     records = _stream_follows(access_token, pipeline_uuid)
     manga_ids = [r["id"] for r in records]
 
     print(f"[{pipeline_uuid}] Fetching personal ratings for {len(manga_ids)} followed manga...")
+    log.info("fetching_ratings", manga_count=len(manga_ids))
     ratings = _fetch_ratings(access_token, manga_ids, pipeline_uuid)
 
     rows = []
@@ -186,4 +195,5 @@ def load_follows(pipeline_uuid: str) -> pd.DataFrame:
     print(
         f"[{pipeline_uuid}] Done. {len(df)} manga followed, {rated_count} rated: {preview}{suffix}"
     )
+    log.info("load_complete", manga_count=len(df), rated_count=int(rated_count), preview=f"{preview}{suffix}")
     return df

@@ -32,6 +32,7 @@ from mage_ai.io.postgres import Postgres
 from mage_ai.settings.repo import get_repo_path
 
 from manga_tracker.utils.helpers.api_request import make_api_request
+from manga_tracker.utils.logging import get_logger
 
 _STATISTICS_URL = "https://api.mangadex.org/statistics/manga"
 _BATCH_SIZE = 100
@@ -80,11 +81,13 @@ def stream_statistics_batches(
     Each yielded DataFrame has columns: mangadex_id, payload, pulled_at.
     Callers should write each batch to Postgres immediately to keep memory flat.
     """
+    log = get_logger(__name__).bind(pipeline_uuid=pipeline_uuid)
     manga_ids = _load_manga_ids(config_profile)
     total_batches = max(1, (len(manga_ids) + _BATCH_SIZE - 1) // _BATCH_SIZE)
     print(
         f"[{pipeline_uuid}] Fetching statistics for {len(manga_ids)} manga in {total_batches} batches..."
     )
+    log.info("fetching_statistics", manga_count=len(manga_ids), total_batches=total_batches)
 
     for i in range(0, len(manga_ids), _BATCH_SIZE):
         batch = manga_ids[i : i + _BATCH_SIZE]
