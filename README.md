@@ -903,6 +903,34 @@ pre-commit install
 
 After that, every `git commit` automatically formats and lints the staged files. If ruff makes changes, the commit is aborted — stage the fixes and commit again.
 
+### Testing
+
+The test suite uses [pytest](https://docs.pytest.org/) with [pytest-asyncio](https://pytest-asyncio.readthedocs.io/) and [httpx](https://www.python-httpx.org/). Tests require no running services — the database and Redis dependencies are mocked.
+
+```bash
+# Install test dependencies (in addition to requirements-api.txt)
+pip install -r requirements-api.txt -r requirements-test.txt
+
+# Run all tests
+pytest
+
+# Run a specific file
+pytest tests/api/test_manga.py
+
+# Run with verbose output
+pytest -v
+```
+
+**Coverage:**
+
+| Module | Tests | What's covered |
+|---|---|---|
+| `api/routers/manga.py` | `tests/api/test_manga.py` | List, detail, chapters — cache hit/miss, 404, pagination |
+| `api/routers/chapters.py` | `tests/api/test_chapters.py` | Recent chapters — cache hit/miss, pagination |
+| `api/main.py` + `api/middleware.py` | `tests/api/test_health.py` | Health response, `X-Request-Id` header |
+| `utils/loaders/mangadex/follows.py` | `tests/utils/test_follows.py` | `_extract_title()` fallback logic |
+| `utils/loaders/mangadex/chapters.py` | `tests/utils/test_chapters_loader.py` | Date chunking, chunk splitting, timestamp parsing |
+
 ### CI
 
 All workflows run on every PR and on every push to `main`. Each workflow has a concurrency group that cancels in-progress runs for the same branch when a new push arrives, avoiding redundant work. Pip packages are cached so install steps are fast after the first run. Dependabot keeps dependencies and action versions up to date automatically.
@@ -934,6 +962,10 @@ Two separate jobs:
 | `dbt run & test` | Depends on `flyway migrations`. Spins up its own fresh Postgres, re-runs migrations to set up the schema, then runs `dbt run --select staging+` to execute all staging models against the real schema (catches missing columns, bad joins, and SQL errors that `compile` alone misses), followed by `dbt test` to run all schema tests. |
 
 The dbt job only runs if Flyway passes — no point running models against a broken schema.
+
+**`.github/workflows/tests.yml` — `Tests`**
+
+Runs the full pytest suite (31 tests) on every PR and push to main. Installs `requirements-api.txt` and `requirements-test.txt`. No service containers required — DB and Redis are mocked.
 
 **`.github/dependabot.yml`**
 
