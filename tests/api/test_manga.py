@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from tests.conftest import make_rows_result, make_scalar_result
 
 MANGA_ROW = {
