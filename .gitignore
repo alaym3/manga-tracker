@@ -2,3 +2,8 @@
 /mage_data/*
 /data_examples/*
 .venv/*
+/tests/__pycache__/*
+/tests/api/__pycache__/*
+__pycache__/
+*.pyc
+.pytest_cache/
