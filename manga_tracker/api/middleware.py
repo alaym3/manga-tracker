@@ -5,6 +5,8 @@ from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from manga_tracker.utils.logging import get_logger
+
 from .database import AsyncSessionLocal
 
 
@@ -12,10 +14,16 @@ class AuditMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         start = time.perf_counter()
         request_id = str(uuid.uuid4())
+        log = get_logger("api.middleware").bind(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+        )
 
         response = await call_next(request)
 
         duration_ms = (time.perf_counter() - start) * 1000
+        log.info("request", status=response.status_code, duration_ms=round(duration_ms, 2))
 
         try:
             async with AsyncSessionLocal() as db:
@@ -40,8 +48,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     },
                 )
                 await db.commit()
-        except Exception:
-            pass  # never let audit writes break the response
+        except Exception as exc:
+            log.warning("audit_write_failed", error=str(exc))
 
         response.headers["X-Request-Id"] = request_id
         return response
