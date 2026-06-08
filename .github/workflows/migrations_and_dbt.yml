@@ -89,7 +89,7 @@ jobs:
         with:
           python-version: "3.10"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-dbt-${{ hashFiles('.github/workflows/migrations_and_dbt.yml') }}
