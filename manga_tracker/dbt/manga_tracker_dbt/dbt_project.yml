@@ -54,6 +54,7 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.created_at_source IS 'Record creation timestamp on MangaDex, from attributes.createdAt.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt. Useful for detecting upstream changes.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
+          - "CREATE UNIQUE INDEX IF NOT EXISTS stg_manga_source_mangadex_id_uidx ON {{ this.schema }}.{{ this.table }} (source, mangadex_id);"
       stg_chapters:
         +materialized: incremental
         +post-hook:
@@ -73,6 +74,7 @@ models:
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.updated_at_source IS 'Last update timestamp on MangaDex, from attributes.updatedAt.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.external_url IS 'External hosting URL from attributes.externalUrl. Non-null for officially hosted chapters e.g. Viz, Manga Plus.';"
           - "COMMENT ON COLUMN {{ this.schema }}.{{ this.table }}.ingested_at IS 'Timestamp when this record was first written to staging by the dbt model.';"
+          - "CREATE UNIQUE INDEX IF NOT EXISTS stg_chapters_mangadex_id_uidx ON {{ this.schema }}.{{ this.table }} (mangadex_id);"
       stg_manga_statistics:
         +materialized: incremental
         +post-hook:
