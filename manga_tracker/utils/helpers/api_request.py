@@ -169,7 +169,7 @@ def _execute_with_retry(
                 f"[api_request] HTML response on HTTP {response.status_code} "
                 f"from {method} {url} — likely rate limited by CDN, retrying."
             )
-        raise _RetryableAPIError(f"HTML response with HTTP {response.status_code} from {url}")
+            raise _RetryableAPIError(f"HTML response with HTTP {response.status_code} from {url}")
 
         # Non-retryable 4xx (e.g. 400, 401, 403, 404) — these are caller errors.
         # Retrying won't fix them, so raise immediately to avoid wasting attempts.
